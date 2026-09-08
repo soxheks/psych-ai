@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: psych-ai
+    runtime: python
+    plan: free
+    buildCommand: "bash build.sh"
+    startCommand: "gunicorn psych_ai.wsgi:application"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.14
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_HOSTS
+        value: ".onrender.com"
+      - key: CSRF_TRUSTED_ORIGINS
+        value: "https://*.onrender.com"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: psych-ai-db
+          property: connectionString
+      - key: AI_PROVIDER
+        value: "doubao"
+      - key: ARK_BASE_URL
+        value: "https://ark.cn-beijing.volces.com/api/v3"
+      - key: DOUBAO_MODEL
+        sync: false
+      - key: ARK_API_KEY
+        sync: false
+
+databases:
+  - name: psych-ai-db
+    plan: free

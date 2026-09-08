@@ -1,0 +1,85 @@
+{% load static %}
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>心研同伴 | AI心理沟通智能体</title>
+    <link rel="stylesheet" href="{% static 'core/css/home.css' %}">
+</head>
+<body>
+    <main class="shell">
+        <section class="workspace" aria-label="心理沟通智能体">
+            <aside class="panel context-panel">
+                <div class="brand">
+                    <div class="brand-mark" aria-hidden="true"></div>
+                    <div>
+                        <p class="eyebrow">AI + 心理健康</p>
+                        <h1>心研同伴</h1>
+                    </div>
+                </div>
+
+                <p class="intro">
+                    面向高校在校大学生，尤其关注学业高压、竞赛、科研、代码调试、绩点焦虑、备考与学业受挫场景。
+                </p>
+
+                <div class="scenario-list" aria-label="学业压力场景">
+                    <button class="scenario active" data-scenario="competition" data-prompt="我正在准备学科竞赛，任务很多，感觉自己一直不够好。">
+                        <span>学科竞赛</span>
+                    </button>
+                    <button class="scenario" data-scenario="research" data-prompt="我在做科研或课题，进展很慢，担心辜负老师期待。">
+                        <span>科研课题</span>
+                    </button>
+                    <button class="scenario" data-scenario="coding" data-prompt="我写代码调试很久都跑不通，开始怀疑自己是不是不适合。">
+                        <span>代码调试</span>
+                    </button>
+                    <button class="scenario" data-scenario="gpa" data-prompt="我很焦虑绩点，看到同学成绩好就特别慌。">
+                        <span>绩点焦虑</span>
+                    </button>
+                    <button class="scenario" data-scenario="exam" data-prompt="我在备考，越临近考试越难集中注意力。">
+                        <span>备考压力</span>
+                    </button>
+                    <button class="scenario" data-scenario="setback" data-prompt="我学业受挫了，感觉努力没有回报。">
+                        <span>学业受挫</span>
+                    </button>
+                </div>
+
+                <div class="safety-note">
+                    <strong>安全边界</strong>
+                    <p>本智能体用于情绪支持与压力梳理，不替代心理咨询、医学诊断或紧急干预。</p>
+                </div>
+            </aside>
+
+            <section class="chat-panel">
+                <header class="chat-header">
+                    <div>
+                        <p class="eyebrow">当前模式</p>
+                        <h2 id="modeTitle">学业压力陪伴</h2>
+                    </div>
+                    <span class="status">在线</span>
+                </header>
+
+                <div id="messages" class="messages" aria-live="polite">
+                    <article class="message assistant">
+                        <div class="avatar">AI</div>
+                        <div class="bubble">
+                            <p>你好，我是心研同伴。你可以把我当作一个先听你说、帮你把学业压力拆清楚的 AI 支持者。</p>
+                            <p>我们可以从一个具体场景开始：最近哪件事最消耗你？</p>
+                        </div>
+                    </article>
+                </div>
+
+                <form id="chatForm" class="composer">
+                    {% csrf_token %}
+                    <textarea id="messageInput" name="message" rows="2" placeholder="写下你现在最想说的一句话..." required></textarea>
+                    <button type="submit" aria-label="发送消息">
+                        <span>发送</span>
+                    </button>
+                </form>
+            </section>
+        </section>
+    </main>
+
+    <script src="{% static 'core/js/home.js' %}"></script>
+</body>
+</html>
