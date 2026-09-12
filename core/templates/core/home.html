@@ -4,82 +4,150 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>心研同伴 | AI心理沟通智能体</title>
-    <link rel="stylesheet" href="{% static 'core/css/home.css' %}">
+    <meta name="theme-color" content="#f2f6f3">
+    <title>心研同伴 | 留一点时间给自己</title>
+    <link rel="preload" as="image" href="{% static 'core/images/companion-poses.png' %}">
+    <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=scroll-voice-2">
 </head>
 <body>
     <main class="shell">
         <section class="workspace" aria-label="心理沟通智能体">
-            <aside class="panel context-panel">
+            <aside class="context-panel">
                 <div class="brand">
-                    <div class="brand-mark" aria-hidden="true"></div>
+                    <div class="brand-mark" aria-hidden="true"><span class="character-portrait"></span></div>
                     <div>
-                        <p class="eyebrow">AI + 心理健康</p>
                         <h1>心研同伴</h1>
+                        <p class="eyebrow">校园里的心情陪伴</p>
+                    </div>
+                </div>
+                <p class="intro">每一种心情，都值得<br>被温柔地听见。</p>
+
+                <div class="topics">
+                    <p class="section-label">聊聊最近的事</p>
+                    <div class="scenario-list" role="group" aria-label="学业压力场景">
+                        <button type="button" class="scenario active" data-scenario="competition" data-prompt="我正在准备学科竞赛，任务很多，感觉自己一直不够好。">
+                            <span class="scenario-icon"><img src="{% static 'core/icons/trophy.svg' %}" alt="" width="19" height="19"></span>
+                            <span>学科竞赛</span>
+                        </button>
+                        <button type="button" class="scenario" data-scenario="research" data-prompt="我在做科研或课题，进展很慢，担心辜负老师期待。">
+                            <span class="scenario-icon"><img src="{% static 'core/icons/flask-conical.svg' %}" alt="" width="19" height="19"></span>
+                            <span>科研课题</span>
+                        </button>
+                        <button type="button" class="scenario" data-scenario="coding" data-prompt="我写代码调试很久都跑不通，开始怀疑自己是不是不适合。">
+                            <span class="scenario-icon"><img src="{% static 'core/icons/code-xml.svg' %}" alt="" width="19" height="19"></span>
+                            <span>代码调试</span>
+                        </button>
+                        <button type="button" class="scenario" data-scenario="gpa" data-prompt="我很焦虑绩点，看到同学成绩好就特别慌。">
+                            <span class="scenario-icon"><img src="{% static 'core/icons/chart-no-axes-combined.svg' %}" alt="" width="19" height="19"></span>
+                            <span>绩点焦虑</span>
+                        </button>
+                        <button type="button" class="scenario" data-scenario="exam" data-prompt="我在备考，越临近考试越难集中注意力。">
+                            <span class="scenario-icon"><img src="{% static 'core/icons/book-open.svg' %}" alt="" width="19" height="19"></span>
+                            <span>备考压力</span>
+                        </button>
+                        <button type="button" class="scenario" data-scenario="setback" data-prompt="我学业受挫了，感觉努力没有回报。">
+                            <span class="scenario-icon"><img src="{% static 'core/icons/sprout.svg' %}" alt="" width="19" height="19"></span>
+                            <span>学业受挫</span>
+                        </button>
                     </div>
                 </div>
 
-                <p class="intro">
-                    面向高校在校大学生，尤其关注学业高压、竞赛、科研、代码调试、绩点焦虑、备考与学业受挫场景。
-                </p>
-
-                <div class="scenario-list" aria-label="学业压力场景">
-                    <button class="scenario active" data-scenario="competition" data-prompt="我正在准备学科竞赛，任务很多，感觉自己一直不够好。">
-                        <span>学科竞赛</span>
-                    </button>
-                    <button class="scenario" data-scenario="research" data-prompt="我在做科研或课题，进展很慢，担心辜负老师期待。">
-                        <span>科研课题</span>
-                    </button>
-                    <button class="scenario" data-scenario="coding" data-prompt="我写代码调试很久都跑不通，开始怀疑自己是不是不适合。">
-                        <span>代码调试</span>
-                    </button>
-                    <button class="scenario" data-scenario="gpa" data-prompt="我很焦虑绩点，看到同学成绩好就特别慌。">
-                        <span>绩点焦虑</span>
-                    </button>
-                    <button class="scenario" data-scenario="exam" data-prompt="我在备考，越临近考试越难集中注意力。">
-                        <span>备考压力</span>
-                    </button>
-                    <button class="scenario" data-scenario="setback" data-prompt="我学业受挫了，感觉努力没有回报。">
-                        <span>学业受挫</span>
-                    </button>
-                </div>
-
-                <div class="safety-note">
-                    <strong>安全边界</strong>
-                    <p>本智能体用于情绪支持与压力梳理，不替代心理咨询、医学诊断或紧急干预。</p>
+                <div class="sidebar-bottom">
+                    <div class="gentle-note">
+                        <img src="{% static 'core/icons/sprout.svg' %}" alt="" width="26" height="26">
+                        <p>成长也可以<br><strong>有自己的节奏。</strong></p>
+                    </div>
+                    <div class="safety-note">
+                        <strong>多一份支持</strong>
+                        <p>当你需要更多帮助时，也可以联系学校心理中心或身边信任的人。</p>
+                    </div>
                 </div>
             </aside>
 
             <section class="chat-panel">
                 <header class="chat-header">
                     <div>
-                        <p class="eyebrow">当前模式</p>
+                        <p class="eyebrow">留一点时间给自己</p>
                         <h2 id="modeTitle">学业压力陪伴</h2>
                     </div>
-                    <span class="status">在线</span>
+                    <div class="chat-tools">
+                        <span class="status" id="chatStatus">在这里陪你</span>
+                        <button type="button" id="voicePreview" class="icon-button" aria-label="试听角色声音" aria-pressed="false" title="试听角色声音" hidden>
+                            <img class="preview-play" src="{% static 'core/icons/play.svg' %}" alt="" width="18" height="18">
+                            <img class="preview-stop" src="{% static 'core/icons/square.svg' %}" alt="" width="16" height="16" hidden>
+                        </button>
+                        <button type="button" id="voiceToggle" class="icon-button" aria-label="开启语音朗读" aria-pressed="false" title="开启语音朗读" hidden>
+                            <img class="voice-off" src="{% static 'core/icons/volume-x.svg' %}" alt="" width="20" height="20">
+                            <img class="voice-on" src="{% static 'core/icons/volume-2.svg' %}" alt="" width="20" height="20" hidden>
+                        </button>
+                    </div>
                 </header>
 
-                <div id="messages" class="messages" aria-live="polite">
-                    <article class="message assistant">
-                        <div class="avatar">AI</div>
-                        <div class="bubble">
-                            <p>你好，我是心研同伴。你可以把我当作一个先听你说、帮你把学业压力拆清楚的 AI 支持者。</p>
-                            <p>我们可以从一个具体场景开始：最近哪件事最消耗你？</p>
+                <div class="conversation">
+                    <div id="messages" class="messages" role="log" aria-label="聊天记录" aria-live="off" tabindex="0">
+                        <section id="welcomeIntro" class="welcome-intro" aria-label="此刻的心情">
+                            <div class="welcome-symbol" aria-hidden="true"><img src="{% static 'core/icons/heart-handshake.svg' %}" alt="" width="26" height="26"></div>
+                            <p class="section-label">你好，很高兴在这里遇见你</p>
+                            <h3>今天，心里装着什么？</h3>
+                            <p class="welcome-description">不必组织好语言，也不用急着找到答案。</p>
+                            <div class="mood-options" role="group" aria-label="选择一句开场白">
+                                <button type="button" class="mood-option mood-blue" data-prompt="我最近有些焦虑，脑子里总有很多担心，想和你聊一聊。">
+                                    <img src="{% static 'core/icons/cloud-rain.svg' %}" alt="" width="20" height="20"><span>有点焦虑</span>
+                                </button>
+                                <button type="button" class="mood-option mood-rose" data-prompt="我最近有些疲惫，好像做什么都提不起劲，想给自己一点喘息的空间。">
+                                    <img src="{% static 'core/icons/moon.svg' %}" alt="" width="20" height="20"><span>有些疲惫</span>
+                                </button>
+                                <button type="button" class="mood-option mood-green" data-prompt="我想找人聊聊，现在还说不太清楚自己的心情。">
+                                    <img src="{% static 'core/icons/message-circle-heart.svg' %}" alt="" width="20" height="20"><span>想找人聊聊</span>
+                                </button>
+                            </div>
+                        </section>
+                        <article class="message assistant">
+                            <div class="avatar companion-avatar" aria-hidden="true"><span class="character-portrait"></span></div>
+                            <div class="bubble welcome-bubble">
+                                <p>你好，我是心研同伴。先陪你听听自己的心情，再一起把眼前的压力拆小一点。</p>
+                                <p>最近，哪件事最让你挂心？</p>
+                            </div>
+                        </article>
+                    </div>
+
+                    <aside id="companion" class="companion" data-state="idle" aria-label="心研同伴对话形象">
+                        <p class="companion-kicker">此刻，陪你一起</p>
+                        <button type="button" class="character-stage" id="characterGreeting" aria-label="和心研同伴打个招呼" title="和心研同伴打个招呼">
+                            <span class="character-look">
+                                <span class="character-motion">
+                                    <span class="character-sprite" aria-hidden="true"></span>
+                                </span>
+                            </span>
+                        </button>
+                        <div class="companion-caption">
+                            <p class="companion-name">心研同伴<span class="companion-label">AI 伙伴</span></p>
+                            <p id="companionStatus" class="companion-status" role="status">我在这里，慢慢说就好</p>
+                            <div class="activity-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+                            <p id="voiceNotice" class="voice-notice" role="status"></p>
                         </div>
-                    </article>
+                        <p class="companion-note">不用时刻表现得很好，<br>在这里，做自己就好。</p>
+                    </aside>
                 </div>
 
                 <form id="chatForm" class="composer">
                     {% csrf_token %}
-                    <textarea id="messageInput" name="message" rows="2" placeholder="写下你现在最想说的一句话..." required></textarea>
-                    <button type="submit" aria-label="发送消息">
-                        <span>发送</span>
-                    </button>
+                    <div class="composer-heading">
+                        <label for="messageInput">这一刻，我想说……</label>
+                        <span id="draftStatus" aria-hidden="true">慢慢来，我在听</span>
+                    </div>
+                    <div class="composer-field">
+                        <textarea id="messageInput" name="message" rows="2" placeholder="从一句话开始，说说你的心情吧…" required maxlength="4000"></textarea>
+                        <button id="sendButton" type="submit" aria-label="发送消息" title="发送消息">
+                            <img src="{% static 'core/icons/send.svg' %}" alt="" width="21" height="21">
+                        </button>
+                    </div>
+                    <p class="composer-note">AI 陪伴不替代专业心理咨询或紧急救助。</p>
                 </form>
+                <div id="replyAnnouncement" class="sr-only" role="status" aria-live="polite"></div>
             </section>
         </section>
     </main>
-
-    <script src="{% static 'core/js/home.js' %}"></script>
+    <script src="{% static 'core/js/home.js' %}?v=scroll-voice-2"></script>
 </body>
 </html>
