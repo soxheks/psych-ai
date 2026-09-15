@@ -20,24 +20,27 @@ const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const speech = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window
     ? window.speechSynthesis : null;
+const openingGreeting = '你好呀，我是心研同伴。先陪你听听自己的心情，再一起把眼前的压力拆小一点。最近，哪件事最让你挂心？';
 
 let activeScenario = 'competition';
 let pending = false;
 let revealing = false;
 let supportMode = false;
-let voiceEnabled = false;
+let voiceEnabled = true;
 let utterance = null;
 let speechStartTimer = null;
 let speechEndTimer = null;
 let speechRequestId = 0;
 let cancelVoiceWait = null;
 let previewActive = false;
-let lastReply = '';
+let lastReply = openingGreeting;
 let followMessages = true;
 let greetingActive = false;
 let greetingTimer = null;
 let lookFrame = null;
 let previousScrollTop = 0;
+let openingGreetingPending = false;
+let openingGreetingTimer = null;
 
 function updateCompanion() {
     let state = 'idle';
@@ -376,7 +379,7 @@ function selectCompanionVoice(voices) {
         || voices.find((voice) => voice.localService) || voices[0];
 }
 
-async function speakReply(text, { preview = false } = {}) {
+async function speakReply(text, { preview = false, opening = false } = {}) {
     if (!speech || (!voiceEnabled && !preview)) return;
     stopSpeech();
     const requestId = speechRequestId;
@@ -397,20 +400,32 @@ async function speakReply(text, { preview = false } = {}) {
     current.rate = 1.02;
     current.volume = 0.9;
     utterance = current;
-    const finish = (notice = '') => {
+    const finish = (notice = '', retryOpening = false) => {
         if (utterance !== current) return;
         stopSpeech();
-        voiceNotice.textContent = notice;
+        if (retryOpening && voiceEnabled) {
+            openingGreetingPending = true;
+            voiceNotice.textContent = '轻触页面后，我会和你打个招呼。';
+        } else {
+            voiceNotice.textContent = notice;
+        }
     };
     current.onstart = () => {
         if (utterance !== current) return;
+        openingGreetingPending = false;
         window.clearTimeout(speechStartTimer);
         voiceNotice.textContent = '';
         updateCompanion();
     };
     current.onend = () => finish();
-    current.onerror = () => finish('语音暂时不可用，文字回复正常。');
-    speechStartTimer = window.setTimeout(() => finish('语音未能启动，文字回复正常。'), 7000);
+    current.onerror = (event) => finish(
+        '语音暂时不可用，文字回复正常。',
+        opening && event.error === 'not-allowed'
+    );
+    speechStartTimer = window.setTimeout(
+        () => finish('语音未能自动启动，文字回复正常。', opening),
+        opening ? 3000 : 7000
+    );
     speechEndTimer = window.setTimeout(() => finish(), Math.min(180000, Math.max(15000, text.length * 500)));
     try {
         speech.speak(current);
@@ -423,7 +438,12 @@ async function speakReply(text, { preview = false } = {}) {
 if (speech) {
     voiceToggle.hidden = false;
     voicePreview.hidden = false;
-    // Load browser-provided voices; speech stays opt-in and keys stay server-side.
+    voiceToggle.setAttribute('aria-pressed', 'true');
+    voiceToggle.setAttribute('aria-label', '关闭语音朗读');
+    voiceToggle.title = '关闭语音朗读';
+    voiceToggle.querySelector('.voice-on').hidden = false;
+    voiceToggle.querySelector('.voice-off').hidden = true;
+    // Load browser-provided voices; speech uses only browser voices and keys stay server-side.
     speech.getVoices();
     voicePreview.addEventListener('click', () => {
         if (pending) return;
@@ -442,8 +462,24 @@ if (speech) {
         if (!voiceEnabled) stopSpeech();
         else if (!pending && lastReply) speakReply(lastReply);
     });
+
+    openingGreetingTimer = window.setTimeout(() => {
+        if (voiceEnabled && !pending && !utterance) {
+            speakReply(openingGreeting, { opening: true });
+        }
+    }, 900);
+
+    const retryOpeningGreeting = (event) => {
+        if (!openingGreetingPending || !voiceEnabled || pending) return;
+        if (event.target.closest?.('#voiceToggle, #voicePreview')) return;
+        openingGreetingPending = false;
+        speakReply(openingGreeting, { opening: true });
+    };
+    document.addEventListener('pointerdown', retryOpeningGreeting, { capture: true });
+    document.addEventListener('keydown', retryOpeningGreeting, { capture: true });
 }
 window.addEventListener('pagehide', () => {
+    window.clearTimeout(openingGreetingTimer);
     window.clearTimeout(greetingTimer);
     greetingActive = false;
     resetCharacterLook();

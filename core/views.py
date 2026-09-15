@@ -25,8 +25,16 @@ RISK_WORDS = (
 )
 
 
+def landing(request):
+    return render(request, 'core/landing.html')
+
+
 def home(request):
     return render(request, 'core/home.html', {'scenario_prompts': SCENARIO_PROMPTS})
+
+
+def journal(request):
+    return render(request, 'core/journal.html')
 
 
 @require_POST

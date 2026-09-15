@@ -3,7 +3,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
 
-const baseURL = process.env.PREVIEW_URL || 'http://127.0.0.1:8003';
+const baseURL = process.env.PREVIEW_URL || 'http://127.0.0.1:8000';
+const chatURL = new URL('/chat/', baseURL).toString();
 const output = path.resolve('output/companion-preview');
 fs.mkdirSync(output, { recursive: true });
 
@@ -50,8 +51,14 @@ async function checkLayout(page, width, height, label) {
         const page = await context.newPage();
         const errors = [];
         page.on('pageerror', (error) => errors.push(error.message));
-        await page.goto(baseURL);
+        await page.goto(chatURL);
         await page.locator('.character-sprite').waitFor();
+        await page.waitForFunction(() => window.__spoken.length === 1);
+        assert.match(await page.evaluate(() => window.__spoken[0]), /你好呀，我是心研同伴/);
+        assert.equal(await page.locator('#voiceToggle').getAttribute('aria-pressed'), 'true');
+        assert.equal(await page.locator('#companion').getAttribute('data-state'), 'speaking');
+        await page.evaluate(() => window.__speech.onend());
+        assert.equal(await page.locator('#companion').getAttribute('data-state'), 'idle');
         const assetURL = await page.locator('.character-sprite').evaluate((element) => getComputedStyle(element).backgroundImage.match(/url\(["']?([^"')]+)/)[1]);
         const asset = await page.request.get(assetURL);
         assert.equal(asset.status(), 200);
@@ -149,17 +156,15 @@ async function checkLayout(page, width, height, label) {
         await page.waitForFunction(() => !document.querySelector('#sendButton').disabled);
         assert.equal(await page.locator('.message.assistant').last().locator('.bubble').textContent(), reply);
         assert.equal(await page.locator('#messageInput').inputValue(), '下一条草稿');
-        assert.equal(await page.locator('#companion').getAttribute('data-state'), 'listening');
+        assert.equal(await page.locator('#companion').getAttribute('data-state'), 'speaking');
         assert.equal(await page.locator('#replyAnnouncement').textContent(), reply);
+        assert.equal(await page.evaluate(() => window.__spoken.at(-1)), reply);
+        await page.evaluate(() => window.__speech.onend());
+        assert.equal(await page.locator('#companion').getAttribute('data-state'), 'listening');
         await page.locator('#messageInput').fill('');
         await page.locator('#voiceToggle').click();
-        assert.equal(await page.locator('#voiceToggle').getAttribute('aria-pressed'), 'true');
-        assert.equal(await page.locator('#companion').getAttribute('data-state'), 'speaking');
-        assert.equal(await page.evaluate(() => window.__spoken[0]), reply);
-        assert.equal(await page.evaluate(() => window.__speech.pitch), 1.22);
-        await page.evaluate(() => window.__speech.onend());
-        assert.equal(await page.locator('#companion').getAttribute('data-state'), 'idle');
-        await page.locator('#voiceToggle').click();
+        assert.equal(await page.locator('#voiceToggle').getAttribute('aria-pressed'), 'false');
+        assert.equal(await page.evaluate(() => window.__speech), null);
 
         await page.unroute('**/api/chat/');
         await page.route('**/api/chat/', (route) => route.fulfill({ status: 503, body: 'unavailable' }));
@@ -205,7 +210,7 @@ async function checkLayout(page, width, height, label) {
         const csrf = await page.locator('[name=csrfmiddlewaretoken]').inputValue();
         const safety = await page.request.post(baseURL + '/api/chat/', {
             form: { message: '自残风险测试', scenario: 'exam' },
-            headers: { 'X-CSRFToken': csrf, Referer: baseURL + '/' },
+            headers: { 'X-CSRFToken': csrf, Referer: chatURL },
         });
         assert.equal(safety.status(), 200);
         assert.equal((await safety.json()).risk, true);

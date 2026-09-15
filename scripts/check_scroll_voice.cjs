@@ -3,7 +3,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
 
-const baseURL = process.env.PREVIEW_URL || 'http://127.0.0.1:8003';
+const baseURL = process.env.PREVIEW_URL || 'http://127.0.0.1:8000';
+const chatURL = new URL('/chat/', baseURL).toString();
 const output = path.resolve('output/companion-preview/scroll-voice');
 fs.mkdirSync(output, { recursive: true });
 const ending = '结尾检查：这句话应该可以完整看到。';
@@ -65,7 +66,7 @@ async function assertAtBottom(page) {
         await page.route('**/api/chat/', (route) => route.fulfill({ json: { reply: longReply, provider: 'fallback' } }));
         for (const [width, height] of [[1440, 650], [1280, 620], [1440, 480], [390, 640], [320, 640]]) {
             await page.setViewportSize({ width, height });
-            await page.goto(baseURL);
+            await page.goto(chatURL);
             const label = width + 'x' + height;
             const initial = await assertBoundaries(page, label + ' welcome');
             assert(initial.scroll > initial.client, label + ': expected overflowing welcome for this regression');
@@ -101,7 +102,7 @@ async function assertAtBottom(page) {
         }
 
         await page.setViewportSize({ width: 1280, height: 620 });
-        await page.goto(baseURL);
+        await page.goto(chatURL);
         await page.emulateMedia({ reducedMotion: 'no-preference' });
         await page.locator('#messageInput').fill('逐字回复滚动测试。');
         await page.locator('#sendButton').click();
@@ -144,14 +145,23 @@ async function assertAtBottom(page) {
             window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
         });
         const voicePage = await voiceContext.newPage();
-        await voicePage.goto(baseURL);
-        await voicePage.locator('#voicePreview').click();
+        await voicePage.goto(chatURL);
         await voicePage.waitForFunction(() => window.__voiceCalls.length === 1);
-        const sample = await voicePage.evaluate(() => window.__voiceCalls[0]);
+        const opening = await voicePage.evaluate(() => window.__voiceCalls[0]);
+        assert.match(opening.text, /你好呀，我是心研同伴/);
+        assert.match(opening.name, /Yaoyao/);
+        assert.equal(opening.pitch, 1.22);
+        assert.equal(opening.rate, 1.02);
+        assert.equal(await voicePage.locator('#voiceToggle').getAttribute('aria-pressed'), 'true');
+        await voicePage.evaluate(() => window.__currentVoice.onend());
+
+        await voicePage.locator('#voicePreview').click();
+        await voicePage.waitForFunction(() => window.__voiceCalls.length === 2);
+        const sample = await voicePage.evaluate(() => window.__voiceCalls[1]);
         assert.match(sample.name, /Yaoyao/);
         assert.equal(sample.pitch, 1.22);
         assert.equal(sample.rate, 1.02);
-        assert.equal(await voicePage.locator('#voiceToggle').getAttribute('aria-pressed'), 'false', 'Preview must not enable automatic reading');
+        assert.equal(await voicePage.locator('#voiceToggle').getAttribute('aria-pressed'), 'true', 'Preview must not disable automatic reading');
         assert.equal(await voicePage.locator('.message.user').count(), 0);
         await voicePage.locator('#voicePreview').click();
         assert.equal(await voicePage.evaluate(() => window.__currentVoice), null);
@@ -164,7 +174,7 @@ async function assertAtBottom(page) {
             speechSynthesis.dispatchEvent(new Event('voiceschanged'));
         });
         await voicePage.waitForTimeout(100);
-        assert.equal(await voicePage.evaluate(() => window.__voiceCalls.length), 1, 'Cancelled voice loading must stay cancelled');
+        assert.equal(await voicePage.evaluate(() => window.__voiceCalls.length), 2, 'Cancelled voice loading must stay cancelled');
 
         await voicePage.evaluate(() => { window.__voices = []; });
         await voicePage.locator('#voicePreview').click();
@@ -172,16 +182,15 @@ async function assertAtBottom(page) {
             window.__voices = window.__savedVoices;
             speechSynthesis.dispatchEvent(new Event('voiceschanged'));
         });
-        await voicePage.waitForFunction(() => window.__voiceCalls.length === 2);
+        await voicePage.waitForFunction(() => window.__voiceCalls.length === 3);
         await voicePage.evaluate(() => window.__currentVoice.onend());
         assert.equal(await voicePage.locator('#voicePreview').getAttribute('aria-pressed'), 'false');
 
         await voicePage.route('**/api/chat/', (route) => route.fulfill({ json: { reply: '测试回复，也使用同一套角色声线。', provider: 'fallback' } }));
-        await voicePage.locator('#voiceToggle').click();
         await voicePage.locator('#messageInput').fill('请回答。');
         await voicePage.locator('#sendButton').click();
-        await voicePage.waitForFunction(() => window.__voiceCalls.length === 3);
-        assert.match((await voicePage.evaluate(() => window.__voiceCalls[2])).name, /Yaoyao/);
+        await voicePage.waitForFunction(() => window.__voiceCalls.length === 4);
+        assert.match((await voicePage.evaluate(() => window.__voiceCalls[3])).name, /Yaoyao/);
         await voicePage.locator('#voiceToggle').click();
 
         await voicePage.evaluate(() => { window.__voices = []; });
@@ -194,19 +203,19 @@ async function assertAtBottom(page) {
         const actualPage = await browser.newPage();
         await actualPage.addInitScript(() => {
             Object.defineProperty(speechSynthesis, 'speak', { value: (item) => {
-                window.__actualSelection = { name: item.voice.name, pitch: item.pitch, rate: item.rate };
+                window.__actualSelection = { text: item.text, name: item.voice.name, pitch: item.pitch, rate: item.rate };
                 item.onstart?.();
                 item.onend?.();
             } });
         });
-        await actualPage.goto(baseURL);
+        await actualPage.goto(chatURL);
         await actualPage.waitForFunction(() => speechSynthesis.getVoices().some((voice) => /^zh/i.test(voice.lang)));
-        await actualPage.locator('#voicePreview').click();
         await actualPage.waitForFunction(() => window.__actualSelection);
         const actualSelection = await actualPage.evaluate(() => window.__actualSelection);
+        assert.match(actualSelection.text, /你好呀，我是心研同伴/);
         assert.match(actualSelection.name, /Yaoyao/);
         fs.writeFileSync(path.join(output, 'verification.json'), JSON.stringify({ passed: true, actualSelection, errors }, null, 2));
         console.log('Voice checks passed:', JSON.stringify(actualSelection));
-        console.log('PASS: initial scrolling, long/animated replies, scroll preservation, viewport/input resizing, voice selection, preview, delayed voices and cancellation.');
+        console.log('PASS: initial scrolling, long/animated replies, scroll preservation, viewport/input resizing, default opening voice, preview, delayed voices and cancellation.');
     } finally { await browser.close(); }
 })().catch((error) => { console.error(error); process.exitCode = 1; });

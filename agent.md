@@ -12,6 +12,18 @@ This is a Django project for the `心理AI比赛` workspace.
 - Language: Simplified Chinese
 - Time zone: `Asia/Shanghai`
 
+## Competition Development Standard (Required)
+
+Before changing product behavior, UI, AI features, data collection, deployment, or submission materials, read `docs/COMPETITION_GUIDE.md` and use it as the acceptance baseline.
+
+- Map meaningful work to one or more official scoring items: innovation (25), needs analysis (15), AI technology application (20), project implementation (15), application outcomes (15), and summary/future plan (10).
+- Prefer features that create verifiable user value for university students under academic pressure, especially competition, research, coding/debugging, GPA anxiety, exam preparation, and academic setbacks.
+- Keep evidence for claims. Never fabricate user research, usage data, effectiveness data, feedback, application cases, or technical indicators.
+- Treat psychological safety and privacy as product requirements: use clear non-diagnostic boundaries, crisis guidance and human referral, data minimization, and secure server-side secret handling.
+- Record the source, license, authorization, and role of third-party models, code, datasets, documents, and visual assets. Do not claim third-party work as original.
+- Do not include the team school name or instructor information in competition plans, presentations, or demo videos.
+- For each substantial feature, preserve test results, screenshots or demo steps, implementation notes, and measurable acceptance criteria so the work can support the technical report and evidence package.
+
 ## Environment
 
 Use the project virtual environment:

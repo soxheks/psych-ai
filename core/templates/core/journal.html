@@ -1,0 +1,74 @@
+{% load static %}
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#edf7f5">
+    <meta name="description" content="写下此刻的心情，把想放下的话折成纸飞机送往远方。">
+    <title>心灵随笔 | 心研同伴</title>
+    <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=1">
+    <link rel="stylesheet" href="{% static 'core/css/journal.css' %}?v=1">
+    <script defer src="{% static 'core/js/page-transition.js' %}?v=1"></script>
+</head>
+<body>
+    <header class="journal-header">
+        <a class="back-link" href="{% url 'landing' %}" aria-label="返回首页" data-transition-label="回到安静首页"><span aria-hidden="true">←</span> 首页</a>
+        <a class="journal-brand" href="{% url 'landing' %}">心研同伴</a>
+        <a class="chat-link" href="{% url 'home' %}" data-transition-label="进入 AI 情绪对话">去聊一聊</a>
+    </header>
+
+    <main class="journal-main">
+        <section class="journal-copy" aria-labelledby="journalTitle">
+            <p class="journal-kicker">心灵随笔</p>
+            <h1 id="journalTitle">有些话，写下来<br>就可以轻一点。</h1>
+            <p>它不需要完整，也不用正确。写好以后，把它交给一架纸飞机，送到视线之外。</p>
+            <div class="privacy-note">
+                <span aria-hidden="true">✓</span>
+                <p><strong>只属于此刻</strong><br>文字仅在当前页面用于动画，不上传、不保存。</p>
+            </div>
+        </section>
+
+        <section class="journal-stage" id="journalStage" aria-label="心灵随笔书写区">
+            <div class="sky" aria-hidden="true">
+                <span class="cloud cloud-one"></span>
+                <span class="cloud cloud-two"></span>
+                <span class="distant-line"></span>
+            </div>
+
+            <form id="journalForm" class="note-paper" novalidate>
+                <div class="paper-heading">
+                    <label for="journalInput">写给此刻的自己</label>
+                    <span><b id="characterCount">0</b>/500</span>
+                </div>
+                <textarea id="journalInput" maxlength="500" rows="9" placeholder="可以写下一件让你疲惫的事、一句没来得及说的话，或只是今天的心情……" required></textarea>
+                <div class="paper-footer">
+                    <p id="journalHint">不署名，也不需要给谁看。</p>
+                    <button id="finishButton" type="submit" disabled>
+                        <img src="{% static 'core/icons/send.svg' %}" alt="" width="20" height="20">
+                        完成，让它飞走
+                    </button>
+                </div>
+            </form>
+
+            <div id="flightLayer" class="flight-layer" aria-hidden="true">
+                <div id="foldingNote" class="folding-note"><span id="foldingText"></span></div>
+                <div class="paper-plane" id="paperPlane"><span class="plane-fold"></span></div>
+                <span class="flight-trail"></span>
+            </div>
+
+            <section id="journalComplete" class="journal-complete" aria-live="polite" tabindex="-1" hidden>
+                <span class="complete-mark" aria-hidden="true">✓</span>
+                <p>它已经飞向远方了。</p>
+                <h2>愿留在这里的你，轻一点。</h2>
+                <div class="complete-actions">
+                    <button id="writeAgain" type="button">再写一封</button>
+                    <a href="{% url 'home' %}" data-transition-label="进入 AI 情绪对话">去和心研同伴聊聊</a>
+                </div>
+            </section>
+        </section>
+    </main>
+    {% include 'core/_page_transition.html' %}
+    <script src="{% static 'core/js/journal.js' %}?v=1"></script>
+</body>
+</html>

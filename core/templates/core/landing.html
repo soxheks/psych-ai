@@ -1,0 +1,74 @@
+{% load static %}
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5faf8">
+    <meta name="description" content="心研同伴，为高校学生提供学业压力下的情绪倾听与温柔陪伴。">
+    <title>心研同伴 | 把心情放在这里</title>
+    <link rel="preload" as="image" href="{% static 'core/images/landing-room.jpg' %}">
+    <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=1">
+    <link rel="stylesheet" href="{% static 'core/css/landing.css' %}?v=1">
+    <script defer src="{% static 'core/js/page-transition.js' %}?v=1"></script>
+</head>
+<body>
+    <header class="site-header">
+        <a class="site-brand" href="{% url 'landing' %}" aria-label="心研同伴首页">
+            <span class="brand-symbol" aria-hidden="true"><span></span></span>
+            <span>心研同伴</span>
+        </a>
+        <nav class="primary-nav" aria-label="主导航">
+            <a class="active" href="{% url 'landing' %}" aria-current="page">首页</a>
+            <a href="{% url 'home' %}" data-transition-label="进入 AI 情绪对话">AI 对话</a>
+            <a href="{% url 'journal' %}" data-transition-label="打开一页心灵随笔">心灵随笔</a>
+        </nav>
+        <a class="header-action" href="{% url 'home' %}" data-transition-label="进入 AI 情绪对话">开始倾诉</a>
+    </header>
+
+    <main>
+        <section class="hero" aria-labelledby="heroTitle">
+            <div class="hero-image" role="img" aria-label="雨天窗边温暖安静的休息角落"></div>
+            <div class="hero-content">
+                <p class="hero-kicker"><span aria-hidden="true"></span> 给忙碌的大脑一会儿安静</p>
+                <h1 id="heroTitle">心研同伴</h1>
+                <p class="hero-lead">在学业压力涌上来的时刻，<br>先让心情有地方安放。</p>
+                <p class="hero-copy">温柔倾听，陪你把竞赛、科研、代码、绩点与备考焦虑，一点点说清楚。</p>
+                <div class="hero-actions">
+                    <a class="button button-primary" href="{% url 'home' %}" data-transition-label="进入 AI 情绪对话">
+                        <img src="{% static 'core/icons/message-circle-heart.svg' %}" alt="" width="21" height="21">
+                        开始 AI 对话
+                        <span aria-hidden="true">→</span>
+                    </a>
+                    <a class="button button-secondary" href="{% url 'journal' %}" data-transition-label="打开一页心灵随笔">
+                        <img src="{% static 'core/icons/book-open.svg' %}" alt="" width="21" height="21">
+                        写一篇心灵随笔
+                    </a>
+                </div>
+            </div>
+            <a class="scroll-cue" href="#paths" aria-label="查看两种陪伴方式"><span></span></a>
+        </section>
+
+        <section class="path-section" id="paths" aria-labelledby="pathsTitle">
+            <div class="section-heading">
+                <p>此刻，你更需要哪一种陪伴？</p>
+                <h2 id="pathsTitle">慢慢来，从适合你的方式开始</h2>
+            </div>
+            <div class="path-list">
+                <a class="path-item path-chat" href="{% url 'home' %}" data-transition-label="进入 AI 情绪对话">
+                    <span class="path-icon"><img src="{% static 'core/icons/message-circle-heart.svg' %}" alt="" width="27" height="27"></span>
+                    <span class="path-text"><strong>AI 情绪对话</strong><small>有人回应，也有人陪你把压力拆小</small></span>
+                    <span class="path-arrow" aria-hidden="true">→</span>
+                </a>
+                <a class="path-item path-journal" href="{% url 'journal' %}" data-transition-label="打开一页心灵随笔">
+                    <span class="path-icon"><img src="{% static 'core/icons/book-open.svg' %}" alt="" width="27" height="27"></span>
+                    <span class="path-text"><strong>心灵随笔</strong><small>写下此刻，让不想留下的话飞远</small></span>
+                    <span class="path-arrow" aria-hidden="true">→</span>
+                </a>
+            </div>
+            <p class="safety-line">AI 陪伴不替代专业心理咨询或紧急救助。遇到危险时，请优先联系身边可信任的人和专业支持。</p>
+        </section>
+    </main>
+    {% include 'core/_page_transition.html' %}
+</body>
+</html>

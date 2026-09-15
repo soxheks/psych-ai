@@ -7,7 +7,9 @@
     <meta name="theme-color" content="#f2f6f3">
     <title>心研同伴 | 留一点时间给自己</title>
     <link rel="preload" as="image" href="{% static 'core/images/companion-poses.png' %}">
-    <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=scroll-voice-2">
+    <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=1">
+    <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=chat-nav-3">
+    <script defer src="{% static 'core/js/page-transition.js' %}?v=1"></script>
 </head>
 <body>
     <main class="shell">
@@ -20,6 +22,18 @@
                         <p class="eyebrow">校园里的心情陪伴</p>
                     </div>
                 </div>
+                <nav class="chat-site-nav" aria-label="站点导航">
+                    <a href="{% url 'landing' %}" aria-label="返回首页" data-transition-label="回到安静首页" title="返回首页">
+                        <span class="chat-nav-icon"><img src="{% static 'core/icons/house.svg' %}" alt="" width="18" height="18"></span>
+                        <span class="chat-nav-copy"><strong>首页</strong><small>回到安静首页</small></span>
+                        <span class="chat-nav-arrow" aria-hidden="true">↗</span>
+                    </a>
+                    <a href="{% url 'journal' %}" aria-label="前往心灵随笔" data-transition-label="打开一页心灵随笔" title="前往心灵随笔">
+                        <span class="chat-nav-icon"><img src="{% static 'core/icons/book-open.svg' %}" alt="" width="18" height="18"></span>
+                        <span class="chat-nav-copy"><strong>心灵随笔</strong><small>写下再轻轻放下</small></span>
+                        <span class="chat-nav-arrow" aria-hidden="true">↗</span>
+                    </a>
+                </nav>
                 <p class="intro">每一种心情，都值得<br>被温柔地听见。</p>
 
                 <div class="topics">
@@ -76,9 +90,9 @@
                             <img class="preview-play" src="{% static 'core/icons/play.svg' %}" alt="" width="18" height="18">
                             <img class="preview-stop" src="{% static 'core/icons/square.svg' %}" alt="" width="16" height="16" hidden>
                         </button>
-                        <button type="button" id="voiceToggle" class="icon-button" aria-label="开启语音朗读" aria-pressed="false" title="开启语音朗读" hidden>
-                            <img class="voice-off" src="{% static 'core/icons/volume-x.svg' %}" alt="" width="20" height="20">
-                            <img class="voice-on" src="{% static 'core/icons/volume-2.svg' %}" alt="" width="20" height="20" hidden>
+                        <button type="button" id="voiceToggle" class="icon-button" aria-label="关闭语音朗读" aria-pressed="true" title="关闭语音朗读" hidden>
+                            <img class="voice-off" src="{% static 'core/icons/volume-x.svg' %}" alt="" width="20" height="20" hidden>
+                            <img class="voice-on" src="{% static 'core/icons/volume-2.svg' %}" alt="" width="20" height="20">
                         </button>
                     </div>
                 </header>
@@ -148,6 +162,7 @@
             </section>
         </section>
     </main>
-    <script src="{% static 'core/js/home.js' %}?v=scroll-voice-2"></script>
+    {% include 'core/_page_transition.html' %}
+    <script src="{% static 'core/js/home.js' %}?v=auto-greeting-4"></script>
 </body>
 </html>
