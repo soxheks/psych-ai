@@ -1,8 +1,11 @@
 import json
 
 from django.http import JsonResponse
+from django.middleware.csrf import get_token
 from django.shortcuts import render
-from django.views.decorators.http import require_POST
+from django.views.decorators.cache import cache_control, never_cache
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.http import require_GET, require_POST
 
 from .ai_client import AIUnavailable, generate_ai_reply
 
@@ -86,16 +89,35 @@ ACTION_CARDS = {
 }
 
 
+@cache_control(public=True, max_age=300, s_maxage=3600, stale_while_revalidate=86400)
 def landing(request):
     return render(request, 'core/landing.html')
 
 
+@ensure_csrf_cookie
+@cache_control(private=True, max_age=300)
 def home(request):
     return render(request, 'core/home.html', {'scenario_prompts': SCENARIO_PROMPTS})
 
 
+@cache_control(public=True, max_age=300, s_maxage=3600, stale_while_revalidate=86400)
 def journal(request):
     return render(request, 'core/journal.html')
+
+
+@require_GET
+@never_cache
+def service_worker(request):
+    response = render(request, 'core/service-worker.js', content_type='application/javascript')
+    response['Service-Worker-Allowed'] = '/'
+    return response
+
+
+@require_GET
+@never_cache
+@ensure_csrf_cookie
+def csrf(request):
+    return JsonResponse({'csrfToken': get_token(request)})
 
 
 @require_POST

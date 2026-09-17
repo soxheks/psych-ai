@@ -5,6 +5,18 @@ const baseURL = process.env.PREVIEW_URL || 'http://127.0.0.1:8000';
 const landingURL = new URL('/', baseURL).toString();
 const journalURL = new URL('/journal/', baseURL).toString();
 
+async function waitForPageCache(page) {
+    const startedAt = Date.now();
+    await page.waitForFunction(async () => {
+        if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) return false;
+        const cache = await caches.open('mindmate-pages-v1');
+        const pages = await Promise.all(['/', '/chat/', '/journal/']
+            .map((path) => cache.match(path, { ignoreVary: true })));
+        return pages.every(Boolean);
+    }, null, { timeout: 10000 });
+    return Date.now() - startedAt;
+}
+
 async function measureTransition(page, selector, expectedURL) {
     const target = page.locator(selector);
     const bounds = await target.boundingBox();
@@ -29,6 +41,7 @@ async function measureTransition(page, selector, expectedURL) {
         page.on('pageerror', (error) => errors.push(error.message));
 
         await page.goto(landingURL);
+        const cacheReadyMs = await waitForPageCache(page);
         await page.locator('.button-secondary').hover();
         await page.waitForFunction(() => [...document.querySelectorAll('link[rel="prefetch"]')]
             .some((link) => new URL(link.href).pathname === '/journal/'));
@@ -52,7 +65,7 @@ async function measureTransition(page, selector, expectedURL) {
         assert(reducedMotionMs < 350, `reduced-motion navigation took ${reducedMotionMs}ms`);
 
         assert.deepEqual(errors, []);
-        console.log(JSON.stringify({ desktop, mobile, reducedMotionMs, errors }, null, 2));
+        console.log(JSON.stringify({ cacheReadyMs, desktop, mobile, reducedMotionMs, errors }, null, 2));
     } finally {
         await browser.close();
     }

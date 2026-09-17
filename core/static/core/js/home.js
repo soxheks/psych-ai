@@ -1,7 +1,7 @@
 const messages = document.querySelector('#messages');
 const form = document.querySelector('#chatForm');
 const input = document.querySelector('#messageInput');
-const csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
+let csrf = readCookie('csrftoken');
 const scenarios = document.querySelectorAll('.scenario');
 const companion = document.querySelector('#companion');
 const companionStatus = document.querySelector('#companionStatus');
@@ -24,6 +24,26 @@ const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const speech = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window
     ? window.speechSynthesis : null;
 const openingGreeting = '你好呀，我是心研同伴。先陪你听听自己的心情，再一起把眼前的压力拆小一点。最近，哪件事最让你挂心？';
+
+function readCookie(name) {
+    const prefix = `${name}=`;
+    const item = document.cookie.split(';').map((value) => value.trim()).find((value) => value.startsWith(prefix));
+    return item ? decodeURIComponent(item.slice(prefix.length)) : '';
+}
+
+async function ensureCsrfToken() {
+    csrf = readCookie('csrftoken') || csrf;
+    if (csrf) return csrf;
+    const response = await fetch('/api/csrf/', {
+        credentials: 'same-origin',
+        cache: 'no-store',
+    });
+    if (!response.ok) throw new Error('CSRF token request failed');
+    const payload = await response.json();
+    csrf = payload.csrfToken || readCookie('csrftoken');
+    if (!csrf) throw new Error('CSRF token unavailable');
+    return csrf;
+}
 
 let activeScenario = 'competition';
 let pending = false;
@@ -310,6 +330,7 @@ form.addEventListener('submit', async (event) => {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 45000);
     try {
+        await ensureCsrfToken();
         const recentHistory = conversationHistory.slice(-6);
         conversationHistory.push({ role: 'user', content: text });
         const body = new URLSearchParams({

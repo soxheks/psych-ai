@@ -126,6 +126,7 @@
 .page-transition.is-leaving .transition-rail { animation: transition-rail-in 250ms 20ms var(--transition-ease) forwards; }
 .page-transition.is-leaving .transition-stars { animation: transition-stars-in 160ms 100ms ease-out forwards; }
 .page-transition.is-leaving .transition-core { animation: transition-core-in 170ms 90ms var(--transition-ease) forwards; }
+.page-transition.is-leaving .transition-emblem::before { animation: transition-wait-breathe 900ms 260ms ease-in-out infinite alternate; }
 
 .page-transition.is-arriving .transition-backdrop { transform: translate3d(0, 0, 0); animation: transition-uncover 340ms 25ms var(--transition-ease) forwards; }
 .page-transition.is-arriving .transition-slice { transform: translate3d(12%, 0, 0); animation: transition-slice-out 360ms var(--transition-ease) forwards; }
@@ -163,6 +164,7 @@
 @keyframes transition-edge-out { from { transform: translate3d(0, 0, 0) rotate(-23deg); } to { transform: translate3d(88vw, 0, 0) rotate(-23deg); } }
 @keyframes transition-stars-out { from { opacity: .72; } to { opacity: 0; } }
 @keyframes transition-core-out { from { opacity: 1; transform: translate3d(-50%, -50%, 0); } to { opacity: 0; transform: translate3d(-53%, -50%, 0); } }
+@keyframes transition-wait-breathe { from { opacity: .42; transform: scale(.84); } to { opacity: 1; transform: scale(1); } }
 @keyframes motion-ripple { 0% { opacity: .15; transform: translate(-50%, -50%) scale(0); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1); } }
 
 @media (max-width: 600px) {

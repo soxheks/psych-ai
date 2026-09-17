@@ -207,7 +207,9 @@ async function checkLayout(page, width, height, label) {
         assert.deepEqual(errors, []);
         await checkLayout(page, 390, 844, 'mobile-conversation');
 
-        const csrf = await page.locator('[name=csrfmiddlewaretoken]').inputValue();
+        const csrfCookie = (await context.cookies(chatURL)).find((cookie) => cookie.name === 'csrftoken');
+        assert(csrfCookie?.value, 'chat page should establish a CSRF cookie');
+        const csrf = csrfCookie.value;
         const safety = await page.request.post(baseURL + '/api/chat/', {
             form: { message: '自残风险测试', scenario: 'exam' },
             headers: { 'X-CSRFToken': csrf, Referer: chatURL },

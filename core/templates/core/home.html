@@ -7,10 +7,10 @@
     <meta name="theme-color" content="#f2f6f3">
     <title>心研同伴 | 留一点时间给自己</title>
     <link rel="preload" as="image" href="{% static 'core/images/companion-poses.png' %}">
-    <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=3">
+    <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=4">
     <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=guided-flow-1">
     <script defer src="{% static 'core/js/sound-effects.js' %}?v=2"></script>
-    <script defer src="{% static 'core/js/page-transition.js' %}?v=3"></script>
+    <script defer src="{% static 'core/js/page-transition.js' %}?v=4"></script>
 </head>
 <body>
     <main class="shell">
@@ -157,7 +157,6 @@
                 </div>
 
                 <form id="chatForm" class="composer">
-                    {% csrf_token %}
                     <div class="composer-heading">
                         <label for="messageInput">这一刻，我想说……</label>
                         <span id="draftStatus" aria-hidden="true">慢慢来，我在听</span>
@@ -201,6 +200,6 @@
         </section>
     </template>
     {% include 'core/_page_transition.html' %}
-    <script src="{% static 'core/js/home.js' %}?v=guided-flow-3"></script>
+    <script src="{% static 'core/js/home.js' %}?v=guided-flow-4"></script>
 </body>
 </html>

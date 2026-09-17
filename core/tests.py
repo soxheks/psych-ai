@@ -19,6 +19,26 @@ class PageTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, '心理沟通智能体')
+        self.assertNotContains(response, 'csrfmiddlewaretoken')
+        self.assertIn('private', response['Cache-Control'])
+
+    def test_navigation_pages_expose_cache_and_service_worker(self):
+        landing = self.client.get(reverse('landing'))
+        journal = self.client.get(reverse('journal'))
+        worker = self.client.get(reverse('service_worker'))
+
+        self.assertIn('public', landing['Cache-Control'])
+        self.assertIn('public', journal['Cache-Control'])
+        self.assertEqual(worker['Content-Type'], 'application/javascript')
+        self.assertEqual(worker['Service-Worker-Allowed'], '/')
+        self.assertContains(worker, 'mindmate-pages-v1')
+
+    def test_csrf_endpoint_returns_a_token(self):
+        response = self.client.get(reverse('csrf'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()['csrfToken'])
+        self.assertIn('csrftoken', response.cookies)
 
     def test_journal_page_keeps_note_processing_in_browser(self):
         response = self.client.get(reverse('journal'))
