@@ -8,7 +8,7 @@
     <title>心研同伴 | 留一点时间给自己</title>
     <link rel="preload" as="image" href="{% static 'core/images/companion-poses.png' %}">
     <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=4">
-    <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=guided-flow-3">
+    <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=guided-flow-4">
     <script defer src="{% static 'core/js/sound-effects.js' %}?v=2"></script>
     <script defer src="{% static 'core/js/page-transition.js' %}?v=4"></script>
 </head>
@@ -88,6 +88,9 @@
                     </div>
                     <div class="chat-tools">
                         <span class="status" id="chatStatus">在这里陪你</span>
+                        <button type="button" class="icon-button safety-open" aria-label="查看心理安全说明" title="心理安全说明">
+                            <img src="{% static 'core/icons/shield-check.svg' %}" alt="" width="20" height="20">
+                        </button>
                         <button type="button" id="voicePreview" class="icon-button" aria-label="试听角色声音" aria-pressed="false" title="试听角色声音" hidden>
                             <img class="preview-play" src="{% static 'core/icons/play.svg' %}" alt="" width="18" height="18">
                             <img class="preview-stop" src="{% static 'core/icons/square.svg' %}" alt="" width="16" height="16" hidden>
@@ -182,12 +185,51 @@
                             <img src="{% static 'core/icons/send.svg' %}" alt="" width="21" height="21">
                         </button>
                     </div>
-                    <p class="composer-note">AI 陪伴不替代专业心理咨询或紧急救助。</p>
+                    <p class="composer-note">AI 陪伴不替代专业心理咨询或紧急救助。<button type="button" class="safety-inline-open safety-open">查看心理安全说明</button></p>
                 </form>
                 <div id="replyAnnouncement" class="sr-only" role="status" aria-live="polite"></div>
             </section>
         </section>
     </main>
+    <dialog id="safetyDialog" class="safety-dialog" aria-labelledby="safetyDialogTitle" aria-describedby="safetyDialogIntro">
+        <div class="safety-dialog-shell">
+            <header>
+                <span class="safety-dialog-icon" aria-hidden="true"><img src="{% static 'core/icons/shield-check.svg' %}" alt="" width="23" height="23"></span>
+                <div>
+                    <p>使用前，先了解边界</p>
+                    <h2 id="safetyDialogTitle">心理安全说明</h2>
+                </div>
+                <button type="button" class="safety-dialog-close" data-safety-close aria-label="关闭心理安全说明" title="关闭">×</button>
+            </header>
+            <div class="safety-dialog-content">
+                <p id="safetyDialogIntro" class="safety-dialog-intro">说清楚能力、隐私与求助边界，才能更安心地使用这段陪伴。</p>
+                <section class="safety-section">
+                    <span aria-hidden="true">01</span>
+                    <div><h3>它可以提供什么</h3><p>倾听和梳理学业压力，陪你看见情绪与可控部分，并把眼前行动拆得更小。</p></div>
+                </section>
+                <section class="safety-section">
+                    <span aria-hidden="true">02</span>
+                    <div><h3>它不能替代什么</h3><p>AI 不能进行心理或医学诊断，也不能替代心理咨询、精神科诊疗或紧急救助。回复可能不准确，重要决定请向专业人员确认。</p></div>
+                </section>
+                <section class="safety-section">
+                    <span aria-hidden="true">03</span>
+                    <div><h3>你的信息如何使用</h3><p>为生成回复，你发送的文字和最近几轮对话会交给网站配置的 AI 服务。请避免填写真实姓名、学号、联系方式、住址、账号密码等敏感信息。压力评分与完成小结只保留在当前页面，刷新后消失。</p></div>
+                </section>
+                <section class="safety-section safety-section-urgent">
+                    <span aria-hidden="true">04</span>
+                    <div><h3>出现紧急危险时</h3><p>如果你有伤害自己或他人的念头，或已经无法保证安全，请停止依赖 AI，立即联系身边可信任的人、辅导员、学校心理中心或所在地紧急救助服务，不要独自承担。</p></div>
+                </section>
+                <div class="safety-immediate">
+                    <strong>此刻正有危险？</strong>
+                    <p>先去有人的地方，远离可能造成伤害的物品，并马上联系能够到场的真人支持。</p>
+                </div>
+            </div>
+            <footer>
+                <p>这份说明随时可以从页面顶部的盾牌按钮重新打开。</p>
+                <button type="button" data-safety-close>我知道了</button>
+            </footer>
+        </div>
+    </dialog>
     <template id="actionCardTemplate">
         <section class="action-card arriving" aria-label="今日行动卡">
             <header>
@@ -244,6 +286,6 @@
         </section>
     </template>
     {% include 'core/_page_transition.html' %}
-    <script src="{% static 'core/js/home.js' %}?v=guided-flow-7"></script>
+    <script src="{% static 'core/js/home.js' %}?v=guided-flow-8"></script>
 </body>
 </html>

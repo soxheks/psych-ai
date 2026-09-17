@@ -22,6 +22,10 @@ class PageTests(TestCase):
         self.assertContains(response, 'initialStressScale')
         self.assertContains(response, 'completionSummaryTemplate')
         self.assertContains(response, '仅保留在当前页面')
+        self.assertContains(response, 'safetyDialog')
+        self.assertContains(response, 'AI 不能进行心理或医学诊断')
+        self.assertContains(response, '最近几轮对话会交给网站配置的 AI 服务')
+        self.assertContains(response, '所在地紧急救助服务')
         self.assertNotContains(response, 'csrfmiddlewaretoken')
         self.assertIn('private', response['Cache-Control'])
 
@@ -34,7 +38,7 @@ class PageTests(TestCase):
         self.assertIn('public', journal['Cache-Control'])
         self.assertEqual(worker['Content-Type'], 'application/javascript')
         self.assertEqual(worker['Service-Worker-Allowed'], '/')
-        self.assertContains(worker, 'mindmate-pages-v4')
+        self.assertContains(worker, 'mindmate-pages-v5')
 
     def test_csrf_endpoint_returns_a_token(self):
         response = self.client.get(reverse('csrf'))

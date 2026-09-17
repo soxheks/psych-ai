@@ -1,4 +1,4 @@
-const PAGE_CACHE = 'mindmate-pages-v4';
+const PAGE_CACHE = 'mindmate-pages-v5';
 const NAVIGATION_PATHS = ['/', '/chat/', '/journal/'];
 
 async function warmNavigationPages() {

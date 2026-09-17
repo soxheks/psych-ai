@@ -22,6 +22,9 @@ const dialogueStages = document.querySelectorAll('#dialogueStages li');
 const dialogueStageLabel = document.querySelector('#dialogueStageLabel');
 const actionCardTemplate = document.querySelector('#actionCardTemplate');
 const completionSummaryTemplate = document.querySelector('#completionSummaryTemplate');
+const safetyDialog = document.querySelector('#safetyDialog');
+const safetyOpenButtons = document.querySelectorAll('.safety-open');
+const safetyCloseButtons = document.querySelectorAll('[data-safety-close]');
 const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const speech = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window
@@ -350,8 +353,25 @@ initialStressOptions.forEach((button) => {
     });
 });
 
+safetyOpenButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+        if (!safetyDialog || safetyDialog.open) return;
+        stopSpeech();
+        safetyDialog.showModal();
+        announcement.textContent = '已打开心理安全说明。';
+    });
+});
+
+safetyCloseButtons.forEach((button) => {
+    button.addEventListener('click', () => safetyDialog?.close());
+});
+
+safetyDialog?.addEventListener('click', (event) => {
+    if (event.target === safetyDialog) safetyDialog.close();
+});
+
 document.addEventListener('click', (event) => {
-    const button = event.target.closest('.scenario, .mood-option, .stress-scale button, .completion-stress-options button, .icon-button, #sendButton');
+    const button = event.target.closest('.scenario, .mood-option, .stress-scale button, .completion-stress-options button, .icon-button, .safety-inline-open, [data-safety-close], #sendButton');
     if (!button || reducedMotion.matches) return;
     button.querySelector('.tap-ripple')?.remove();
     const bounds = button.getBoundingClientRect();
