@@ -45,6 +45,8 @@ const selectedAction = '打开任务清单，只圈出截止最近且最重要�
         });
 
         await page.goto(chatURL);
+        await page.locator('#initialStressScale [data-stress="5"]').click();
+        assert.match(await page.locator('#initialStressFeedback').textContent(), /压力 5 分/);
         await page.locator('#messageInput').fill('我想先处理竞赛任务。');
         await page.locator('#sendButton').click();
         await page.locator('.action-card').waitFor({ state: 'visible' });
@@ -58,6 +60,11 @@ const selectedAction = '打开任务清单，只圈出截止最近且最重要�
         assert.equal(await page.locator('#dialogueStages li[data-stage="action"] span').textContent(), '✓');
         assert.match(await page.locator('#dialogueStageLabel').textContent(), /已经完成/);
         assert.equal(await page.locator('#dialogueStages li.active').count(), 0);
+        await page.locator('.completion-summary').waitFor({ state: 'visible' });
+        await page.locator('.completion-stress-options [data-stress="2"]').click();
+        assert.match(await page.locator('.completion-result strong').textContent(), /轻了 3 分/);
+        assert.equal(await page.locator('.stress-before em').textContent(), '5 分');
+        assert.equal(await page.locator('.stress-after em').textContent(), '2 分');
 
         await page.locator('#messageInput').fill('有');
         await page.locator('#sendButton').click();

@@ -8,7 +8,7 @@
     <title>心研同伴 | 留一点时间给自己</title>
     <link rel="preload" as="image" href="{% static 'core/images/companion-poses.png' %}">
     <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=4">
-    <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=guided-flow-2">
+    <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=guided-flow-3">
     <script defer src="{% static 'core/js/sound-effects.js' %}?v=2"></script>
     <script defer src="{% static 'core/js/page-transition.js' %}?v=4"></script>
 </head>
@@ -127,6 +127,21 @@
                                     <img src="{% static 'core/icons/message-circle-heart.svg' %}" alt="" width="20" height="20"><span>想找人聊聊</span>
                                 </button>
                             </div>
+                            <div id="initialStressCheckin" class="stress-checkin">
+                                <div class="stress-checkin-copy">
+                                    <strong>此刻的压力大约有几分？</strong>
+                                    <span>可选，仅用于这次对话</span>
+                                </div>
+                                <div id="initialStressScale" class="stress-scale" role="group" aria-label="记录对话开始时的压力程度，1分很轻，5分很重">
+                                    <button type="button" data-stress="1" aria-label="压力1分，很轻" aria-pressed="false">1</button>
+                                    <button type="button" data-stress="2" aria-label="压力2分" aria-pressed="false">2</button>
+                                    <button type="button" data-stress="3" aria-label="压力3分" aria-pressed="false">3</button>
+                                    <button type="button" data-stress="4" aria-label="压力4分" aria-pressed="false">4</button>
+                                    <button type="button" data-stress="5" aria-label="压力5分，很重" aria-pressed="false">5</button>
+                                </div>
+                                <div class="stress-scale-legend" aria-hidden="true"><span>很轻</span><span>很重</span></div>
+                                <p id="initialStressFeedback" class="stress-feedback" role="status"></p>
+                            </div>
                         </section>
                         <article class="message assistant">
                             <div class="avatar companion-avatar" aria-hidden="true"><span class="character-portrait"></span></div>
@@ -199,7 +214,36 @@
             <p class="action-privacy">仅用于当前对话，刷新页面后不会保存。</p>
         </section>
     </template>
+    <template id="completionSummaryTemplate">
+        <section class="completion-summary arriving" aria-label="本次陪伴小结">
+            <header>
+                <span class="completion-summary-icon" aria-hidden="true"><img src="{% static 'core/icons/heart-handshake.svg' %}" alt="" width="21" height="21"></span>
+                <div><small>这一刻的小结</small><h3>你已经迈出了一小步</h3></div>
+            </header>
+            <p class="completion-action"></p>
+            <div class="completion-checkin">
+                <p class="completion-prompt"></p>
+                <div class="completion-stress-options" role="group" aria-label="记录行动完成后的压力程度，1分很轻，5分很重">
+                    <button type="button" data-stress="1" aria-label="现在压力1分，很轻" aria-pressed="false">1</button>
+                    <button type="button" data-stress="2" aria-label="现在压力2分" aria-pressed="false">2</button>
+                    <button type="button" data-stress="3" aria-label="现在压力3分" aria-pressed="false">3</button>
+                    <button type="button" data-stress="4" aria-label="现在压力4分" aria-pressed="false">4</button>
+                    <button type="button" data-stress="5" aria-label="现在压力5分，很重" aria-pressed="false">5</button>
+                </div>
+                <div class="stress-scale-legend" aria-hidden="true"><span>很轻</span><span>很重</span></div>
+            </div>
+            <div class="completion-result" hidden>
+                <strong></strong>
+                <div class="stress-comparison" hidden>
+                    <div class="stress-row stress-before"><span>开始</span><i><b></b></i><em></em></div>
+                    <div class="stress-row stress-after"><span>现在</span><i><b></b></i><em></em></div>
+                </div>
+                <p></p>
+            </div>
+            <p class="completion-privacy">感受没有标准答案，记录仅保留在当前页面。</p>
+        </section>
+    </template>
     {% include 'core/_page_transition.html' %}
-    <script src="{% static 'core/js/home.js' %}?v=guided-flow-6"></script>
+    <script src="{% static 'core/js/home.js' %}?v=guided-flow-7"></script>
 </body>
 </html>

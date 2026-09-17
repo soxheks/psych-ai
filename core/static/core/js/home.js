@@ -13,12 +13,15 @@ const voicePreview = document.querySelector('#voicePreview');
 const voiceNotice = document.querySelector('#voiceNotice');
 const welcomeIntro = document.querySelector('#welcomeIntro');
 const moodOptions = document.querySelectorAll('.mood-option');
+const initialStressOptions = document.querySelectorAll('#initialStressScale [data-stress]');
+const initialStressFeedback = document.querySelector('#initialStressFeedback');
 const characterGreeting = document.querySelector('#characterGreeting');
 const characterLook = document.querySelector('.character-look');
 const draftStatus = document.querySelector('#draftStatus');
 const dialogueStages = document.querySelectorAll('#dialogueStages li');
 const dialogueStageLabel = document.querySelector('#dialogueStageLabel');
 const actionCardTemplate = document.querySelector('#actionCardTemplate');
+const completionSummaryTemplate = document.querySelector('#completionSummaryTemplate');
 const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const speech = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window
@@ -67,6 +70,9 @@ let openingGreetingTimer = null;
 let flowStage = 'listen';
 let selectedAction = '';
 let actionStatus = '';
+let initialStress = null;
+let finalStress = null;
+let completionSummaryRendered = false;
 const conversationHistory = [];
 
 const stageLabels = {
@@ -194,6 +200,75 @@ function renderActionCard(card) {
     scrollMessages(true);
 }
 
+function stressChangeCopy(before, after) {
+    if (before === null) {
+        return {
+            title: `已记录此刻的感受：${after} 分`,
+            message: '没有记录开始时的分数也没关系。愿意停下来感受自己，本身就是一种照顾。',
+        };
+    }
+    const change = before - after;
+    if (change > 0) {
+        return {
+            title: `比刚开始轻了 ${change} 分`,
+            message: '这不代表所有问题都消失了，但说明你已经为自己腾出了一点空间。',
+        };
+    }
+    if (change < 0) {
+        return {
+            title: '现在似乎比刚开始更紧绷',
+            message: '谢谢你如实记录。变化不是失败的证明，先暂停任务、照顾当下的自己也很重要。',
+        };
+    }
+    return {
+        title: '此刻的感受暂时没有明显变化',
+        message: '没有立刻变轻也不代表这一步没有意义。你已经完成了一次停下来、看见自己的练习。',
+    };
+}
+
+function renderCompletionSummary() {
+    if (completionSummaryRendered || !completionSummaryTemplate) return;
+    completionSummaryRendered = true;
+    const summary = completionSummaryTemplate.content.firstElementChild.cloneNode(true);
+    const action = selectedAction || '刚才为自己选择的那一小步';
+    const prompt = summary.querySelector('.completion-prompt');
+    const result = summary.querySelector('.completion-result');
+    const comparison = summary.querySelector('.stress-comparison');
+    summary.querySelector('.completion-action').textContent = `你完成了：${action}`;
+    prompt.textContent = initialStress === null
+        ? '现在，再轻轻感受一下：此刻的压力大约有几分？'
+        : `开始时你记录了 ${initialStress} 分。现在的压力大约有几分？`;
+
+    summary.querySelectorAll('.completion-stress-options [data-stress]').forEach((button) => {
+        button.addEventListener('click', () => {
+            finalStress = Number(button.dataset.stress);
+            summary.querySelectorAll('.completion-stress-options [data-stress]').forEach((item) => {
+                item.setAttribute('aria-pressed', String(item === button));
+            });
+            const copy = stressChangeCopy(initialStress, finalStress);
+            result.hidden = false;
+            result.querySelector('strong').textContent = copy.title;
+            result.querySelector('p').textContent = copy.message;
+            if (initialStress !== null) {
+                comparison.hidden = false;
+                const before = comparison.querySelector('.stress-before');
+                const after = comparison.querySelector('.stress-after');
+                before.querySelector('b').style.width = `${initialStress * 20}%`;
+                after.querySelector('b').style.width = `${finalStress * 20}%`;
+                before.querySelector('em').textContent = `${initialStress} 分`;
+                after.querySelector('em').textContent = `${finalStress} 分`;
+            }
+            summary.classList.add('is-rated');
+            announcement.textContent = `${copy.title}。${copy.message}`;
+            companionStatus.textContent = '谢谢你照顾并认真看见了自己';
+            scrollMessages(true);
+        });
+    });
+    messages.append(summary);
+    announcement.textContent = '行动已经完成。可以选择记录此刻的压力感受。';
+    scrollMessages(true);
+}
+
 function updateCompanion() {
     let state = 'idle';
     let label = '我在这里，慢慢说就好';
@@ -266,8 +341,17 @@ moodOptions.forEach((button) => {
     });
 });
 
+initialStressOptions.forEach((button) => {
+    button.addEventListener('click', () => {
+        initialStress = Number(button.dataset.stress);
+        initialStressOptions.forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
+        initialStressFeedback.textContent = `已记下：此刻压力 ${initialStress} 分。结束时我们再轻轻看一眼。`;
+        announcement.textContent = initialStressFeedback.textContent;
+    });
+});
+
 document.addEventListener('click', (event) => {
-    const button = event.target.closest('.scenario, .mood-option, .icon-button, #sendButton');
+    const button = event.target.closest('.scenario, .mood-option, .stress-scale button, .completion-stress-options button, .icon-button, #sendButton');
     if (!button || reducedMotion.matches) return;
     button.querySelector('.tap-ripple')?.remove();
     const bounds = button.getBoundingClientRect();
@@ -385,6 +469,7 @@ form.addEventListener('submit', async (event) => {
         await revealReply(thinking.querySelector('.bubble'), data.reply, supportMode);
         conversationHistory.push({ role: 'assistant', content: data.reply });
         if (!supportMode) renderActionCard(data.action_card);
+        if (!supportMode && actionStatus === 'completed') renderCompletionSummary();
         chatStatus.textContent = supportMode
             ? '安全支持模式'
             : (providerLabels[data.provider] || '在这里陪你');
