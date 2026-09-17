@@ -15,7 +15,7 @@ SYSTEM_PROMPT = """
 3. 如果用户表达自杀、自残、伤害自己、伤害他人或强烈危机风险，要优先建议立刻联系身边可信任的人、学校心理中心、辅导员或当地紧急救助。
 4. 语气要温和、具体、尊重，不说教，不轻易评价用户。
 5. 回复应使用简体中文，适合大学生阅读。
-6. 每次回复尽量给出一个很小、今天能做的下一步。
+6. 尚未行动时可给出一个很小、今天能做的下一步；用户已完成行动时先复盘，不立刻布置新任务。
 7. 遵循当前指定的陪伴阶段，不要跳过倾听直接说教，也不要一次提出多个问题。
 8. 不使用“你应该”“想开点”等命令或轻描淡写的表达。回复控制在 220 字以内。
 """.strip()
@@ -51,27 +51,47 @@ PHASE_GUIDANCE = {
     ),
 }
 
+ACTION_STATUS_LABELS = {
+    'selected': '已选择，尚未说明已经开始',
+    'started': '已经开始进行',
+    'completed': '已经明确完成',
+    'stuck': '已经尝试但遇到阻碍',
+    'adjusting': '认为原步骤太难，正在缩小步骤',
+}
 
-def generate_ai_reply(message, scenario, history=None, phase='clarify', selected_action=''):
+ACTION_STATUS_GUIDANCE = {
+    'selected': '用户只是选定了行动，不要误称已经完成；可以温和确认准备从哪里开始。',
+    'started': '用户已经开始，不要再问是否开始；关注当前进展或阻碍。',
+    'completed': (
+        '用户已经明确完成该行动。绝对不要再邀请用户开始、尝试、今天再做一点，'
+        '也不要把已经完成的行动说成将来的任务。结合上一轮问题理解“有、是、轻松一点”等简短回答，'
+        '围绕完成后的感受、有效方法和可复用经验进行复盘。'
+    ),
+    'stuck': '用户已经实际尝试但卡住了，不要把卡住说成没有行动；只帮助定位一个具体阻碍。',
+    'adjusting': '用户认为原步骤太难；不要催促执行原步骤，帮助把它缩小或换成更轻的动作。',
+}
+
+
+def generate_ai_reply(message, scenario, history=None, phase='clarify', selected_action='', action_status=''):
     provider = settings.AI_PROVIDER.lower()
 
     if provider in ('auto', 'doubao', 'ark') and settings.ARK_API_KEY:
         try:
-            return call_doubao(message, scenario, history, phase, selected_action), 'doubao'
+            return call_doubao(message, scenario, history, phase, selected_action, action_status), 'doubao'
         except AIUnavailable:
             if provider in ('doubao', 'ark'):
                 raise
 
     if provider in ('auto', 'gemini') and settings.GEMINI_API_KEY:
         try:
-            return call_gemini(message, scenario, history, phase, selected_action), 'gemini'
+            return call_gemini(message, scenario, history, phase, selected_action, action_status), 'gemini'
         except AIUnavailable:
             if provider == 'gemini':
                 raise
 
     if provider in ('auto', 'ollama'):
         try:
-            return call_ollama(message, scenario, history, phase, selected_action), 'ollama'
+            return call_ollama(message, scenario, history, phase, selected_action, action_status), 'ollama'
         except AIUnavailable:
             if provider == 'ollama':
                 raise
@@ -79,7 +99,7 @@ def generate_ai_reply(message, scenario, history=None, phase='clarify', selected
     raise AIUnavailable('No configured AI provider is available.')
 
 
-def build_user_prompt(message, scenario, history=None, phase='clarify', selected_action=''):
+def build_user_prompt(message, scenario, history=None, phase='clarify', selected_action='', action_status=''):
     scenario_label = SCENARIO_LABELS.get(scenario, '一般学业压力')
     recent_context = []
     for item in (history or [])[-6:]:
@@ -87,17 +107,20 @@ def build_user_prompt(message, scenario, history=None, phase='clarify', selected
         recent_context.append(f'{speaker}：{item.get("content", "")[:500]}')
     context = '\n'.join(recent_context) if recent_context else '这是本轮对话的第一次表达。'
     guidance = PHASE_GUIDANCE.get(phase, PHASE_GUIDANCE['clarify'])
+    status_label = ACTION_STATUS_LABELS.get(action_status, '尚无明确行动状态')
+    status_guidance = ACTION_STATUS_GUIDANCE.get(action_status, '')
     return (
         f'当前场景：{scenario_label}\n'
         f'用户已选择的行动：{selected_action[:500] if selected_action else "尚未选择"}\n'
+        f'行动当前状态：{status_label}\n'
         f'最近对话（仅用于本次回复）：\n{context}\n\n'
         f'学生最新表达：{message}\n\n'
-        f'{guidance}\n'
+        f'{guidance}\n{status_guidance}\n'
         '只输出要直接对学生说的话，不输出阶段名称、分析过程或格式说明。'
     )
 
 
-def call_gemini(message, scenario, history=None, phase='clarify', selected_action=''):
+def call_gemini(message, scenario, history=None, phase='clarify', selected_action='', action_status=''):
     model = settings.GEMINI_MODEL
     url = f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent'
     payload = {
@@ -107,7 +130,7 @@ def call_gemini(message, scenario, history=None, phase='clarify', selected_actio
         'contents': [
             {
                 'role': 'user',
-                'parts': [{'text': build_user_prompt(message, scenario, history, phase, selected_action)}],
+                'parts': [{'text': build_user_prompt(message, scenario, history, phase, selected_action, action_status)}],
             }
         ],
         'generationConfig': {
@@ -127,13 +150,13 @@ def call_gemini(message, scenario, history=None, phase='clarify', selected_actio
         raise AIUnavailable('Gemini returned an unexpected response.') from exc
 
 
-def call_doubao(message, scenario, history=None, phase='clarify', selected_action=''):
+def call_doubao(message, scenario, history=None, phase='clarify', selected_action='', action_status=''):
     url = settings.ARK_BASE_URL.rstrip('/') + '/chat/completions'
     payload = {
         'model': settings.DOUBAO_MODEL,
         'messages': [
             {'role': 'system', 'content': SYSTEM_PROMPT},
-            {'role': 'user', 'content': build_user_prompt(message, scenario, history, phase, selected_action)},
+            {'role': 'user', 'content': build_user_prompt(message, scenario, history, phase, selected_action, action_status)},
         ],
         'temperature': 0.7,
         'max_tokens': 700,
@@ -150,14 +173,14 @@ def call_doubao(message, scenario, history=None, phase='clarify', selected_actio
         raise AIUnavailable('Doubao returned an unexpected response.') from exc
 
 
-def call_ollama(message, scenario, history=None, phase='clarify', selected_action=''):
+def call_ollama(message, scenario, history=None, phase='clarify', selected_action='', action_status=''):
     url = settings.OLLAMA_URL.rstrip('/') + '/api/chat'
     payload = {
         'model': settings.OLLAMA_MODEL,
         'stream': False,
         'messages': [
             {'role': 'system', 'content': SYSTEM_PROMPT},
-            {'role': 'user', 'content': build_user_prompt(message, scenario, history, phase, selected_action)},
+            {'role': 'user', 'content': build_user_prompt(message, scenario, history, phase, selected_action, action_status)},
         ],
         'options': {
             'temperature': 0.7,

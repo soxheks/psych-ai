@@ -66,6 +66,7 @@ let openingGreetingPending = false;
 let openingGreetingTimer = null;
 let flowStage = 'listen';
 let selectedAction = '';
+let actionStatus = '';
 const conversationHistory = [];
 
 const stageLabels = {
@@ -137,6 +138,7 @@ function renderActionCard(card) {
         accept.textContent = '这一步，已经选好了';
         conversationHistory.push({ role: 'user', content: '我选择的今日行动是：' + steps[stepIndex] });
         selectedAction = steps[stepIndex];
+        actionStatus = 'selected';
         updateDialogueStage('action');
         companionStatus.textContent = '不用做完全部，先陪你迈出这一小步';
         announcement.textContent = '已选定今日行动：' + steps[stepIndex];
@@ -145,16 +147,18 @@ function renderActionCard(card) {
     });
     start.addEventListener('click', () => {
         actionCard.classList.add('is-running');
+        actionStatus = 'started';
         start.disabled = true;
         start.textContent = '正在进行';
         nextStatus.textContent = '已经开始。先试十分钟，不用追求做完；有任何进展或阻碍，都可以回来告诉我。';
         companionStatus.textContent = '我会在这里，等你按自己的节奏回来';
         announcement.textContent = '行动已经开始。完成或卡住时，可以选择下面的按钮继续。';
     });
-    function followUp(message, state, status) {
+    function followUp(message, state, status, nextActionStatus) {
         if (pending || actionCard.classList.contains('is-following-up')) return;
         actionCard.classList.add('is-following-up', state);
         nextStatus.textContent = status;
+        actionStatus = nextActionStatus;
         if (!submitGuidedUpdate(message, state === 'is-adjusting' ? 'control' : 'action')) {
             actionCard.classList.remove('is-following-up', state);
         }
@@ -162,17 +166,20 @@ function renderActionCard(card) {
     completeAction.addEventListener('click', () => followUp(
         '我完成了行动卡里的这一步，想和你简单复盘一下。',
         'is-complete',
-        '收到你的进展了。我们一起看看，是什么帮助你完成了这一步。'
+        '收到你的进展了。我们一起看看，是什么帮助你完成了这一步。',
+        'completed'
     ));
     stuck.addEventListener('click', () => followUp(
         '我尝试了行动卡里的这一步，但现在卡住了，请陪我看看阻碍在哪里。',
         'is-stuck',
-        '卡住不等于失败。你已经把具体情况告诉我，我们一起看看阻碍。'
+        '卡住不等于失败。你已经把具体情况告诉我，我们一起看看阻碍。',
+        'stuck'
     ));
     smaller.addEventListener('click', () => followUp(
         '这张行动卡对我来说还是有点难，请帮我换成一个更轻、更容易开始的步骤。',
         'is-adjusting',
-        '好的，我们把这一步再缩小，不勉强现在的自己。'
+        '好的，我们把这一步再缩小，不勉强现在的自己。',
+        'adjusting'
     ));
     messages.append(actionCard);
     scrollMessages(true);
@@ -338,6 +345,7 @@ form.addEventListener('submit', async (event) => {
             scenario: activeScenario,
             flow_stage: flowStage,
             selected_action: selectedAction,
+            action_status: actionStatus,
             history: JSON.stringify(recentHistory),
         });
         const response = await fetch('/api/chat/', {
@@ -361,6 +369,7 @@ form.addEventListener('submit', async (event) => {
         thinking.classList.toggle('risk', supportMode);
         lastReply = data.reply;
         if (!supportMode) updateDialogueStage(data.stage);
+        if (typeof data.action_status === 'string') actionStatus = data.action_status;
         revealing = true;
         updateCompanion();
         if (voiceEnabled) speakReply(data.reply);

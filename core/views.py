@@ -1,4 +1,5 @@
 import json
+import re
 
 from django.http import JsonResponse
 from django.middleware.csrf import get_token
@@ -27,6 +28,12 @@ RISK_WORDS = (
     '伤害自己',
     '自残',
     '活不下去',
+)
+
+ACTION_STATUSES = {'selected', 'started', 'completed', 'stuck', 'adjusting'}
+COMPLETED_RESTART_PATTERNS = (
+    '能不能先', '可以先做', '今天能花', '今天先做', '有没有开始',
+    '还没开始', '现在开始', '先做一点', '尝试一下',
 )
 
 ACTION_CARDS = {
@@ -127,6 +134,8 @@ def chat(request):
     flow_stage = request.POST.get('flow_stage', 'listen').strip()
     history = parse_history(request.POST.get('history', '[]'))
     selected_action = request.POST.get('selected_action', '').strip()[:500]
+    requested_action_status = request.POST.get('action_status', '').strip()
+    action_status = requested_action_status if requested_action_status in ACTION_STATUSES else ''
 
     if not message:
         return JsonResponse({'reply': '我在这里。你可以先用一句话说说：最近最压着你的那件学业相关的事是什么？'})
@@ -152,17 +161,21 @@ def chat(request):
             history=history,
             phase=phase,
             selected_action=selected_action,
+            action_status=action_status,
         )
     except AIUnavailable:
-        reply = build_supportive_reply(message, scenario, phase, selected_action)
+        reply = build_supportive_reply(message, scenario, phase, selected_action, action_status)
         provider = 'fallback'
 
-    reply = anchor_selected_action(reply, phase, selected_action)
+    reply = enforce_action_state(reply, selected_action, action_status)
+    reply = anchor_selected_action(reply, phase, selected_action, action_status)
+    reply = normalize_reply_punctuation(reply)
     action_card = build_action_card(scenario, selected_action) if phase == 'control' else None
     return JsonResponse({
         'reply': reply,
         'provider': provider,
         'stage': phase,
+        'action_status': action_status,
         'action_card': action_card,
     })
 
@@ -193,14 +206,43 @@ def next_phase(flow_stage):
     }.get(flow_stage, 'clarify')
 
 
-def anchor_selected_action(reply, phase, selected_action):
-    if not selected_action or phase not in ('control', 'action') or selected_action in reply:
+def action_text(selected_action):
+    return selected_action.strip().rstrip('。！？!?；;，, ')
+
+
+def anchor_selected_action(reply, phase, selected_action, action_status=''):
+    clean_action = action_text(selected_action)
+    if (
+        not clean_action
+        or phase not in ('control', 'action')
+        or action_status == 'completed'
+        or clean_action in reply
+    ):
         return reply
     if phase == 'control':
-        lead = f'你刚才选择的“{selected_action}”现在感觉有些难，我们把它再缩小一点。'
+        lead = f'你刚才选择的“{clean_action}”现在感觉有些难，我们把它再缩小一点。'
+    elif action_status == 'stuck':
+        lead = f'你已经尝试了“{clean_action}”，现在遇到了阻碍。'
     else:
-        lead = f'你刚才选择并尝试的是“{selected_action}”。'
+        lead = f'你当前选择的是“{clean_action}”。'
     return f'{lead}\n\n{reply}'
+
+
+def enforce_action_state(reply, selected_action, action_status):
+    if action_status != 'completed' or not any(pattern in reply for pattern in COMPLETED_RESTART_PATTERNS):
+        return reply
+    clean_action = action_text(selected_action) or '刚才那一小步'
+    return (
+        f'你已经完成了“{clean_action}”，这一步已经真实发生了，不需要再从头开始。\n\n'
+        '能感觉到压力轻了一点，是很值得记住的反馈。刚才最帮助你的，是只选出一项，还是把第一个动作写清楚？'
+    )
+
+
+def normalize_reply_punctuation(reply):
+    reply = re.sub(r'([。！？!?])([”’"])。', r'\1\2', reply)
+    reply = re.sub(r'([。！？!?])\1+', r'\1', reply)
+    reply = re.sub(r'([，、；：])\1+', r'\1', reply)
+    return reply.strip()
 
 
 def build_action_card(scenario, excluded_step=''):
@@ -217,7 +259,7 @@ def build_action_card(scenario, excluded_step=''):
     }
 
 
-def build_supportive_reply(message, scenario, phase='clarify', selected_action=''):
+def build_supportive_reply(message, scenario, phase='clarify', selected_action='', action_status=''):
     scene = {
         'competition': '竞赛压力常常来自高强度比较和截止日期',
         'research': '科研和课题的不确定性会把人拖进“没有进展”的挫败感里',
@@ -242,13 +284,18 @@ def build_supportive_reply(message, scenario, phase='clarify', selected_action='
             '哪一种安排会让你觉得更容易开始一点？'
         )
     if phase == 'action':
-        action = selected_action or '刚才选定的那一步'
-        if '完成' in message:
+        action = action_text(selected_action) or '刚才选定的那一步'
+        if action_status == 'completed':
+            if message.strip() in ('有', '是', '有一点', '轻松了一点', '轻松一点'):
+                return (
+                    f'你已经完成了“{action}”。能感觉到轻松一点，说明把任务缩小后，你真的找到了可以落脚的位置。\n\n'
+                    '刚才最帮助你的，是只专注一项，还是把第一个动作写得很具体？'
+                )
             return (
                 f'你完成的是“{action}”。这不是一句笼统的“有进展”，而是一个已经发生的具体行动。\n\n'
                 '回想一下，是什么帮助你开始并完成了它？我们可以把这个方法留给下一次。'
             )
-        if '卡住' in message:
+        if action_status == 'stuck' or '卡住' in message:
             return (
                 f'你尝试的是“{action}”，现在卡住了。卡住说明这一步里还有需要继续拆开的地方，不代表你没有行动。\n\n'
                 '具体停在哪个位置：不知道怎么开始、过程中遇到问题，还是担心做得不够好？'

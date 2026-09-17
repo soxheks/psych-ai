@@ -9,7 +9,7 @@ async function waitForPageCache(page) {
     const startedAt = Date.now();
     await page.waitForFunction(async () => {
         if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) return false;
-        const cache = await caches.open('mindmate-pages-v1');
+        const cache = await caches.open('mindmate-pages-v2');
         const pages = await Promise.all(['/', '/chat/', '/journal/']
             .map((path) => cache.match(path, { ignoreVary: true })));
         return pages.every(Boolean);

@@ -31,7 +31,7 @@ class PageTests(TestCase):
         self.assertIn('public', journal['Cache-Control'])
         self.assertEqual(worker['Content-Type'], 'application/javascript')
         self.assertEqual(worker['Service-Worker-Allowed'], '/')
-        self.assertContains(worker, 'mindmate-pages-v1')
+        self.assertContains(worker, 'mindmate-pages-v2')
 
     def test_csrf_endpoint_returns_a_token(self):
         response = self.client.get(reverse('csrf'))
@@ -68,6 +68,7 @@ class GuidedConversationTests(TestCase):
             history=[],
             phase='clarify',
             selected_action='',
+            action_status='',
         )
 
     @patch('core.views.generate_ai_reply', return_value=('我们先找今天能控制的一小部分。', 'doubao'))
@@ -89,6 +90,7 @@ class GuidedConversationTests(TestCase):
             history=[{'role': 'user', 'content': '代码一直报错'}],
             phase='control',
             selected_action='',
+            action_status='',
         )
 
     @patch('core.views.generate_ai_reply')
@@ -112,12 +114,14 @@ class GuidedConversationTests(TestCase):
             history=[{'role': 'user', 'content': '任务很多'}],
             phase='control',
             selected_action='列出今晚最重要的一项任务',
+            action_status='selected',
         )
 
         self.assertIn('当前阶段是“找到可控”', prompt)
         self.assertIn('学生：任务很多', prompt)
         self.assertIn('学生最新表达：我最怕来不及。', prompt)
         self.assertIn('用户已选择的行动：列出今晚最重要的一项任务', prompt)
+        self.assertIn('行动当前状态：已选择', prompt)
 
     @patch('core.views.generate_ai_reply', side_effect=AIUnavailable())
     def test_fallback_knows_the_exact_selected_action(self, generate):
@@ -127,23 +131,44 @@ class GuidedConversationTests(TestCase):
             'scenario': 'coding',
             'flow_stage': 'action',
             'selected_action': selected,
+            'action_status': 'completed',
         })
 
         payload = response.json()
         self.assertEqual(payload['provider'], 'fallback')
-        self.assertIn(selected, payload['reply'])
+        self.assertIn(selected.rstrip('。'), payload['reply'])
         self.assertNotIn('刚才选定的那一步，现在是', payload['reply'])
 
-    @patch('core.views.generate_ai_reply', return_value=('收到你的进展了，我们来简单复盘。', 'doubao'))
-    def test_ai_reply_is_anchored_to_the_exact_selected_action(self, generate):
+    @patch('core.views.generate_ai_reply', return_value=('太好了，今天能花5分钟先做一点吗？', 'doubao'))
+    def test_completed_action_cannot_be_treated_as_not_started(self, generate):
         selected = '把报错信息和预期结果各写一句，再定位最早出现差异的位置。'
         response = self.client.post(reverse('chat'), {
-            'message': '我完成了这一步。',
+            'message': '有',
             'scenario': 'coding',
             'flow_stage': 'action',
             'selected_action': selected,
+            'action_status': 'completed',
+            'history': '[{"role":"assistant","content":"完成后有没有轻松一点？"}]',
         })
 
         payload = response.json()
         self.assertEqual(payload['provider'], 'doubao')
-        self.assertTrue(payload['reply'].startswith(f'你刚才选择并尝试的是“{selected}”。'))
+        self.assertEqual(payload['action_status'], 'completed')
+        self.assertIn('已经完成了', payload['reply'])
+        self.assertNotIn('今天能花', payload['reply'])
+        self.assertNotIn('先做一点', payload['reply'])
+
+    @patch('core.views.generate_ai_reply', return_value=('我们看看下一步。', 'doubao'))
+    def test_action_anchor_does_not_duplicate_terminal_punctuation(self, generate):
+        selected = '只圈出最重要的一项。'
+        response = self.client.post(reverse('chat'), {
+            'message': '我开始了。',
+            'scenario': 'competition',
+            'flow_stage': 'action',
+            'selected_action': selected,
+            'action_status': 'started',
+        })
+
+        reply = response.json()['reply']
+        self.assertIn('你当前选择的是“只圈出最重要的一项”。', reply)
+        self.assertNotIn('。”。', reply)
