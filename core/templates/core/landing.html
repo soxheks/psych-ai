@@ -8,9 +8,11 @@
     <meta name="description" content="心研同伴，为高校学生提供学业压力下的情绪倾听与温柔陪伴。">
     <title>心研同伴 | 把心情放在这里</title>
     <link rel="preload" as="image" href="{% static 'core/images/landing-room.jpg' %}">
-    <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=1">
-    <link rel="stylesheet" href="{% static 'core/css/landing.css' %}?v=1">
-    <script defer src="{% static 'core/js/page-transition.js' %}?v=1"></script>
+    <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=2">
+    <link rel="stylesheet" href="{% static 'core/css/landing.css' %}?v=2">
+    <script defer src="{% static 'core/js/sound-effects.js' %}?v=2"></script>
+    <script defer src="{% static 'core/js/page-transition.js' %}?v=2"></script>
+    <script defer src="{% static 'core/js/landing.js' %}?v=1"></script>
 </head>
 <body>
     <header class="site-header">
@@ -23,12 +25,23 @@
             <a href="{% url 'home' %}" data-transition-label="进入 AI 情绪对话">AI 对话</a>
             <a href="{% url 'journal' %}" data-transition-label="打开一页心灵随笔">心灵随笔</a>
         </nav>
-        <a class="header-action" href="{% url 'home' %}" data-transition-label="进入 AI 情绪对话">开始倾诉</a>
+        <div class="header-tools">
+            {% include 'core/_sound_toggle.html' %}
+            <a class="header-action" href="{% url 'home' %}" data-transition-label="进入 AI 情绪对话">开始倾诉</a>
+        </div>
     </header>
 
     <main>
         <section class="hero" aria-labelledby="heroTitle">
-            <div class="hero-image" role="img" aria-label="雨天窗边温暖安静的休息角落"></div>
+            <div class="hero-scene" aria-hidden="true">
+                <div class="hero-image">
+                    <div class="window-rain"></div>
+                </div>
+            </div>
+            <button class="scene-toggle" type="button" aria-label="关闭背景动态" title="关闭背景动态" aria-pressed="true" hidden>
+                <img class="scene-stop" src="{% static 'core/icons/square.svg' %}" alt="" width="17" height="17">
+                <img class="scene-play" src="{% static 'core/icons/play.svg' %}" alt="" width="17" height="17" hidden>
+            </button>
             <div class="hero-content">
                 <p class="hero-kicker"><span aria-hidden="true"></span> 给忙碌的大脑一会儿安静</p>
                 <h1 id="heroTitle">心研同伴</h1>

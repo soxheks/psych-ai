@@ -16,6 +16,9 @@ const moodOptions = document.querySelectorAll('.mood-option');
 const characterGreeting = document.querySelector('#characterGreeting');
 const characterLook = document.querySelector('.character-look');
 const draftStatus = document.querySelector('#draftStatus');
+const dialogueStages = document.querySelectorAll('#dialogueStages li');
+const dialogueStageLabel = document.querySelector('#dialogueStageLabel');
+const actionCardTemplate = document.querySelector('#actionCardTemplate');
 const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const speech = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window
@@ -41,6 +44,119 @@ let lookFrame = null;
 let previousScrollTop = 0;
 let openingGreetingPending = false;
 let openingGreetingTimer = null;
+let flowStage = 'listen';
+let selectedAction = '';
+const conversationHistory = [];
+
+const stageLabels = {
+    listen: '先听你说',
+    clarify: '一起看清压力',
+    control: '寻找能控制的部分',
+    action: '陪你迈出一小步',
+};
+const stageOrder = ['listen', 'clarify', 'control', 'action'];
+const providerLabels = {
+    doubao: '豆包 AI 陪伴中',
+    gemini: 'Gemini AI 陪伴中',
+    ollama: '本地 AI 陪伴中',
+    fallback: '基础陪伴模式',
+};
+
+function updateDialogueStage(stage) {
+    if (!stageOrder.includes(stage)) return;
+    flowStage = stage;
+    const activeIndex = stageOrder.indexOf(stage);
+    dialogueStageLabel.textContent = stageLabels[stage];
+    dialogueStages.forEach((item, index) => {
+        item.classList.toggle('active', index === activeIndex);
+        item.classList.toggle('done', index < activeIndex);
+        if (index === activeIndex) item.setAttribute('aria-current', 'step');
+        else item.removeAttribute('aria-current');
+    });
+}
+
+function submitGuidedUpdate(text, stage = 'action') {
+    if (pending || !text) return false;
+    updateDialogueStage(stage);
+    input.value = text;
+    resizeInput();
+    form.requestSubmit();
+    return true;
+}
+
+function renderActionCard(card) {
+    if (!card || typeof card.step !== 'string' || !actionCardTemplate) return;
+    messages.querySelector('.action-card:not(.is-accepted)')?.remove();
+    const actionCard = actionCardTemplate.content.firstElementChild.cloneNode(true);
+    const steps = [card.step, ...(Array.isArray(card.alternatives) ? card.alternatives : [])]
+        .filter((step, index, items) => typeof step === 'string' && step.trim() && items.indexOf(step) === index);
+    let stepIndex = 0;
+    const step = actionCard.querySelector('.action-step');
+    const change = actionCard.querySelector('.action-change');
+    const accept = actionCard.querySelector('.action-accept');
+    const next = actionCard.querySelector('.action-next');
+    const nextStatus = actionCard.querySelector('.action-next-status');
+    const start = actionCard.querySelector('.action-start');
+    const completeAction = actionCard.querySelector('.action-complete');
+    const stuck = actionCard.querySelector('.action-stuck');
+    const smaller = actionCard.querySelector('.action-smaller');
+    actionCard.querySelector('h3').textContent = card.title || '只做眼前的一小步';
+    actionCard.querySelector('.action-duration').textContent = card.duration || '约 10 分钟';
+    actionCard.querySelector('.action-note').textContent = card.note || '不求一次做好，只确认这一步是否适合现在的你。';
+    step.textContent = steps[0];
+    change.hidden = steps.length < 2;
+    change.addEventListener('click', () => {
+        stepIndex = (stepIndex + 1) % steps.length;
+        step.textContent = steps[stepIndex];
+        announcement.textContent = '已换成新的小步骤：' + steps[stepIndex];
+        scrollMessages();
+    });
+    accept.addEventListener('click', () => {
+        actionCard.classList.add('is-accepted');
+        accept.disabled = true;
+        accept.textContent = '这一步，已经选好了';
+        conversationHistory.push({ role: 'user', content: '我选择的今日行动是：' + steps[stepIndex] });
+        selectedAction = steps[stepIndex];
+        updateDialogueStage('action');
+        companionStatus.textContent = '不用做完全部，先陪你迈出这一小步';
+        announcement.textContent = '已选定今日行动：' + steps[stepIndex];
+        next.hidden = false;
+        scrollMessages(true);
+    });
+    start.addEventListener('click', () => {
+        actionCard.classList.add('is-running');
+        start.disabled = true;
+        start.textContent = '正在进行';
+        nextStatus.textContent = '已经开始。先试十分钟，不用追求做完；有任何进展或阻碍，都可以回来告诉我。';
+        companionStatus.textContent = '我会在这里，等你按自己的节奏回来';
+        announcement.textContent = '行动已经开始。完成或卡住时，可以选择下面的按钮继续。';
+    });
+    function followUp(message, state, status) {
+        if (pending || actionCard.classList.contains('is-following-up')) return;
+        actionCard.classList.add('is-following-up', state);
+        nextStatus.textContent = status;
+        if (!submitGuidedUpdate(message, state === 'is-adjusting' ? 'control' : 'action')) {
+            actionCard.classList.remove('is-following-up', state);
+        }
+    }
+    completeAction.addEventListener('click', () => followUp(
+        '我完成了行动卡里的这一步，想和你简单复盘一下。',
+        'is-complete',
+        '收到你的进展了。我们一起看看，是什么帮助你完成了这一步。'
+    ));
+    stuck.addEventListener('click', () => followUp(
+        '我尝试了行动卡里的这一步，但现在卡住了，请陪我看看阻碍在哪里。',
+        'is-stuck',
+        '卡住不等于失败。你已经把具体情况告诉我，我们一起看看阻碍。'
+    ));
+    smaller.addEventListener('click', () => followUp(
+        '这张行动卡对我来说还是有点难，请帮我换成一个更轻、更容易开始的步骤。',
+        'is-adjusting',
+        '好的，我们把这一步再缩小，不勉强现在的自己。'
+    ));
+    messages.append(actionCard);
+    scrollMessages(true);
+}
 
 function updateCompanion() {
     let state = 'idle';
@@ -194,7 +310,15 @@ form.addEventListener('submit', async (event) => {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 45000);
     try {
-        const body = new URLSearchParams({ message: text, scenario: activeScenario });
+        const recentHistory = conversationHistory.slice(-6);
+        conversationHistory.push({ role: 'user', content: text });
+        const body = new URLSearchParams({
+            message: text,
+            scenario: activeScenario,
+            flow_stage: flowStage,
+            selected_action: selectedAction,
+            history: JSON.stringify(recentHistory),
+        });
         const response = await fetch('/api/chat/', {
             method: 'POST',
             headers: {
@@ -215,13 +339,22 @@ form.addEventListener('submit', async (event) => {
         supportMode = Boolean(data.risk);
         thinking.classList.toggle('risk', supportMode);
         lastReply = data.reply;
+        if (!supportMode) updateDialogueStage(data.stage);
         revealing = true;
         updateCompanion();
         if (voiceEnabled) speakReply(data.reply);
         await revealReply(thinking.querySelector('.bubble'), data.reply, supportMode);
-        chatStatus.textContent = data.provider === 'fallback' ? '基础陪伴模式' : '在这里陪你';
+        conversationHistory.push({ role: 'assistant', content: data.reply });
+        if (!supportMode) renderActionCard(data.action_card);
+        chatStatus.textContent = supportMode
+            ? '安全支持模式'
+            : (providerLabels[data.provider] || '在这里陪你');
+        chatStatus.dataset.provider = supportMode ? 'safety' : (data.provider || 'unknown');
         announcement.textContent = data.reply;
     } catch (error) {
+        if (conversationHistory.at(-1)?.role === 'user' && conversationHistory.at(-1)?.content === text) {
+            conversationHistory.pop();
+        }
         const notice = error.name === 'AbortError'
             ? '这次回应等得有些久。你的话已经保留，可以稍后再试一次。'
             : '暂时没有收到回应。你的话已经保留，可以稍后再试一次。';

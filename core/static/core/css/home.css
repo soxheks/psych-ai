@@ -132,7 +132,7 @@ h2 { font-size: 20px; font-weight: 600; }
 .safety-note strong { display: block; margin-bottom: 6px; color: #7e735c; font-size: 11px; font-weight: 500; }
 .safety-note p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.85; }
 
-.chat-panel { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-width: 0; min-height: 0; overflow: hidden; }
+.chat-panel { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; min-width: 0; min-height: 0; overflow: hidden; }
 .chat-header {
     display: flex;
     align-items: center;
@@ -148,6 +148,26 @@ h2 { font-size: 20px; font-weight: 600; }
 .status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #7d9e83; }
 .icon-button { display: grid; place-items: center; width: 40px; height: 40px; flex: 0 0 40px; padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: #fafcf9; }
 .icon-button[aria-pressed="true"] { background: #e5efe7; border-color: #a9c4b1; }
+.dialogue-path {
+    display: grid;
+    grid-template-columns: 110px minmax(0, 560px);
+    align-items: center;
+    gap: 18px;
+    min-height: 48px;
+    padding: 7px 30px;
+    border-bottom: 1px solid var(--line);
+    background: #fbfdfb;
+}
+.dialogue-path > p { margin: 0; color: #668071; font-size: 11px; }
+.dialogue-path ol { display: grid; grid-template-columns: repeat(4, 1fr); margin: 0; padding: 0; list-style: none; }
+.dialogue-path li { position: relative; display: flex; align-items: center; gap: 6px; color: #93a198; font-size: 10px; }
+.dialogue-path li:not(:last-child)::after { content: ""; position: absolute; z-index: 0; left: 24px; right: 6px; top: 50%; height: 1px; background: #dfe8e1; }
+.dialogue-path li span { position: relative; z-index: 1; display: grid; place-items: center; width: 20px; height: 20px; flex: 0 0 20px; border: 1px solid #cad8ce; border-radius: 50%; background: #fff; font-size: 9px; }
+.dialogue-path li b { position: relative; z-index: 1; padding-right: 6px; background: #fbfdfb; font-weight: 500; white-space: nowrap; }
+.dialogue-path li.done, .dialogue-path li.active { color: #416c59; }
+.dialogue-path li.done span { color: #fff; border-color: #7eaa93; background: #7eaa93; }
+.dialogue-path li.done:not(:last-child)::after { background: #9bbca8; }
+.dialogue-path li.active span { border-color: #4f826a; box-shadow: 0 0 0 3px #e5f0e8; font-weight: 700; }
 .conversation { display: grid; grid-template-columns: minmax(0, 1fr) 268px; grid-template-rows: minmax(0, 1fr); min-height: 0; overflow: hidden; }
 .messages {
     position: relative;
@@ -192,6 +212,47 @@ h2 { font-size: 20px; font-weight: 600; }
 .welcome-bubble { white-space: normal; }
 .bubble p { margin: 0 0 10px; }
 .bubble p:last-child { margin-bottom: 0; }
+
+.action-card {
+    align-self: flex-start;
+    width: min(620px, calc(100% - 47px));
+    margin-left: 47px;
+    padding: 17px 18px 14px;
+    border: 1px solid #cddfd1;
+    border-left: 3px solid #709d82;
+    border-radius: 8px;
+    background: #fbfdf8;
+    box-shadow: 0 10px 26px #315d4210;
+}
+.action-card header { display: grid; grid-template-columns: 38px 1fr auto; align-items: center; gap: 11px; }
+.action-card-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 7px; background: #e6f0e7; }
+.action-card small { display: block; margin-bottom: 2px; color: #71877a; font-size: 10px; }
+.action-card h3 { color: #315442; font-size: 16px; font-weight: 650; }
+.action-duration { align-self: start; padding: 5px 8px; border: 1px solid #d7e4d9; border-radius: 6px; color: #6d8174; background: #fff; font-size: 10px; white-space: nowrap; }
+.action-step { margin: 15px 0 7px; color: #3f594b; font-size: 14px; line-height: 1.75; }
+.action-note { margin: 0; color: #788a7e; font-size: 11px; line-height: 1.65; }
+.action-card footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.action-card footer button { min-height: 36px; padding: 0 12px; border: 1px solid #bdd2c2; border-radius: 7px; color: #4d6d5b; background: #fff; font-size: 11px; }
+.action-card footer button:hover { transform: translateY(-1px); border-color: #8fb19b; }
+.action-card .action-accept { color: #fff; border-color: var(--green); background: var(--green); }
+.action-privacy { margin: 10px 0 0; color: #9aa69f; font-size: 9px; text-align: right; }
+.action-card.is-accepted { border-left-color: #4c8066; background: #f3f8f2; }
+.action-card.is-accepted .action-change { display: none; }
+.action-card.is-accepted .action-accept { color: #426550; border-color: transparent; background: transparent; cursor: default; }
+.action-card.is-accepted .action-accept:disabled { opacity: 1; cursor: default; }
+.action-next { margin-top: 14px; padding-top: 14px; border-top: 1px solid #d8e5da; }
+.action-next strong { display: block; margin-bottom: 5px; color: #355b47; font-size: 12px; font-weight: 650; }
+.action-next-status { margin: 0; color: #6f8376; font-size: 11px; line-height: 1.7; }
+.action-progress-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+.action-progress-actions button { min-height: 34px; padding: 0 11px; border: 1px solid #bdd2c2; border-radius: 7px; color: #4d6d5b; background: #fff; font-size: 11px; }
+.action-progress-actions button:hover:not(:disabled) { transform: translateY(-1px); border-color: #7fa58e; }
+.action-progress-actions .action-start { color: #fff; border-color: var(--green); background: var(--green); }
+.action-progress-actions .action-stuck, .action-progress-actions .action-smaller { color: #796648; border-color: #ded2ba; background: #fffdf7; }
+.action-card.is-running .action-next { border-top-color: #b8d1bf; }
+.action-card.is-running .action-start { color: #426550; border-color: #c9d9cc; background: #e8f1e9; opacity: 1; cursor: default; }
+.action-card.is-complete { border-left-color: #4c8066; }
+.action-card.is-stuck { border-left-color: #a68c5f; }
+.action-card.is-following-up .action-progress-actions button { pointer-events: none; opacity: .5; }
 
 .companion { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; justify-content: safe center; min-width: 0; min-height: 0; padding: 24px 15px; overflow-y: auto; scrollbar-width: thin; border-left: 1px solid #e7eee6; background: #f6faf7; }
 .companion-kicker { margin: 0 0 12px; color: #7a8c7f; font-size: 11px; }
@@ -298,6 +359,13 @@ textarea::placeholder { color: #96a299; }
     .chat-site-nav a::before, .chat-nav-copy, .chat-nav-arrow { display: none; }
     .chat-nav-icon { width: 34px; height: 34px; background: transparent !important; }
     .chat-site-nav a:hover { transform: translateY(-2px); }
+    .dialogue-path { grid-template-columns: 76px minmax(0, 1fr); min-height: 40px; padding: 5px 16px; gap: 8px; }
+    .dialogue-path > p { font-size: 9px; }
+    .dialogue-path li { gap: 3px; }
+    .dialogue-path li b { display: none; }
+    .dialogue-path li.active b { display: block; position: absolute; top: 23px; left: 50%; padding: 1px 3px; transform: translateX(-50%); font-size: 8px; }
+    .dialogue-path li:not(:last-child)::after { left: 20px; right: 2px; }
+    .dialogue-path li span { width: 18px; height: 18px; flex-basis: 18px; }
     .scenario-list { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; }
     .scenario { justify-content: center; gap: 5px; min-height: 34px; padding: 5px 4px; font-size: 12px; border-radius: 6px; }
     .scenario::after { display: none; }
@@ -352,6 +420,16 @@ textarea::placeholder { color: #96a299; }
     .message { gap: 8px; max-width: 100%; }
     .avatar { flex-basis: 29px; width: 29px; height: 29px; }
     .bubble { padding: 11px 13px; font-size: 13px; }
+    .action-card { width: calc(100% - 37px); margin-left: 37px; padding: 14px 13px 12px; }
+    .action-card header { grid-template-columns: 34px 1fr; gap: 9px; }
+    .action-card-icon { width: 34px; height: 34px; }
+    .action-duration { display: none; }
+    .action-card h3 { font-size: 14px; }
+    .action-step { margin-top: 12px; font-size: 12px; }
+    .action-card footer { display: grid; grid-template-columns: 1fr; }
+    .action-card footer button { width: 100%; }
+    .action-progress-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .action-progress-actions button { width: 100%; min-width: 0; padding: 0 7px; }
     .composer { padding-left: 14px; padding-right: 14px; }
     .composer-heading { font-size: 11px; }
     .composer-heading span { font-size: 10px; }

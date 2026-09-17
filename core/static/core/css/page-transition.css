@@ -5,6 +5,29 @@
     --transition-ease: cubic-bezier(.22, .78, .18, 1);
 }
 
+.header-tools, .journal-tools { display: flex; align-items: center; justify-self: end; gap: 10px; }
+.sound-toggle {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 36px;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid #bfd6ce;
+    border-radius: 7px;
+    background: #ffffffeb;
+    cursor: pointer;
+    transition: transform 180ms ease, background-color 180ms ease;
+}
+.sound-toggle[hidden], .sound-toggle img[hidden] { display: none; }
+.sound-toggle:hover { background: #e8f3ef; transform: translateY(-2px); }
+.sound-toggle:active { transform: scale(.94); }
+.sound-toggle:focus-visible { outline: 3px solid #4c8f87; outline-offset: 3px; }
+.chat-site-nav .sound-toggle { justify-self: end; }
+@media (max-width: 380px) {
+    .header-tools, .journal-tools { gap: 6px; }
+}
+
 .page-transition {
     position: fixed;
     z-index: 9999;

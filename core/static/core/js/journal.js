@@ -20,6 +20,7 @@ function updateInputState() {
 }
 
 function showComplete() {
+    window.MindmateSounds?.stop();
     stage.classList.remove('is-sending');
     flightLayer.setAttribute('aria-hidden', 'true');
     form.hidden = true;
@@ -37,11 +38,13 @@ form.addEventListener('submit', (event) => {
     foldingText.textContent = note;
     flightLayer.setAttribute('aria-hidden', 'false');
     stage.classList.add('is-sending');
+    window.MindmateSounds?.paperFlight();
     window.clearTimeout(completionTimer);
     completionTimer = window.setTimeout(showComplete, reducedMotion.matches ? 120 : 3650);
 });
 
 writeAgain.addEventListener('click', () => {
+    window.MindmateSounds?.stop();
     window.clearTimeout(completionTimer);
     sending = false;
     input.value = '';
@@ -55,4 +58,7 @@ writeAgain.addEventListener('click', () => {
 
 input.addEventListener('input', updateInputState);
 window.addEventListener('pagehide', () => window.clearTimeout(completionTimer));
+window.addEventListener('pageshow', (event) => {
+    if (event.persisted && sending && complete.hidden) showComplete();
+});
 updateInputState();

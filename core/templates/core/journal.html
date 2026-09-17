@@ -7,15 +7,19 @@
     <meta name="theme-color" content="#edf7f5">
     <meta name="description" content="写下此刻的心情，把想放下的话折成纸飞机送往远方。">
     <title>心灵随笔 | 心研同伴</title>
-    <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=1">
+    <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=2">
     <link rel="stylesheet" href="{% static 'core/css/journal.css' %}?v=1">
-    <script defer src="{% static 'core/js/page-transition.js' %}?v=1"></script>
+    <script defer src="{% static 'core/js/sound-effects.js' %}?v=2"></script>
+    <script defer src="{% static 'core/js/page-transition.js' %}?v=2"></script>
 </head>
 <body>
     <header class="journal-header">
         <a class="back-link" href="{% url 'landing' %}" aria-label="返回首页" data-transition-label="回到安静首页"><span aria-hidden="true">←</span> 首页</a>
         <a class="journal-brand" href="{% url 'landing' %}">心研同伴</a>
-        <a class="chat-link" href="{% url 'home' %}" data-transition-label="进入 AI 情绪对话">去聊一聊</a>
+        <div class="journal-tools">
+            {% include 'core/_sound_toggle.html' %}
+            <a class="chat-link" href="{% url 'home' %}" data-transition-label="进入 AI 情绪对话">去聊一聊</a>
+        </div>
     </header>
 
     <main class="journal-main">
@@ -69,6 +73,6 @@
         </section>
     </main>
     {% include 'core/_page_transition.html' %}
-    <script src="{% static 'core/js/journal.js' %}?v=1"></script>
+    <script src="{% static 'core/js/journal.js' %}?v=2"></script>
 </body>
 </html>

@@ -110,6 +110,8 @@ The app supports server-side AI provider paths without adding extra Python packa
 
 The browser chat calls the Django `/api/chat/` endpoint directly, so visitors do not need to install anything or log in to a third-party AI service. For real model output without visitor login, configure a server-side provider key or run a local model on the server.
 
+The chat uses a four-stage academic-pressure support flow and server-controlled action cards. See `docs/GUIDED_CONVERSATION.md` before changing the flow protocol, client-only history handling, safety branch, or action-card content.
+
 Optional environment variables:
 
 ```powershell

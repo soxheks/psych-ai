@@ -37,6 +37,7 @@
 
         event.preventDefault();
         leaving = true;
+        window.MindmateSounds?.transition();
         const nextLabel = link.dataset.transitionLabel || link.getAttribute('aria-label') || link.textContent.trim() || '去往下一站';
         label.textContent = nextLabel.replace(/\s+/g, ' ');
         overlay.classList.remove('is-arriving');

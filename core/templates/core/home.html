@@ -7,9 +7,10 @@
     <meta name="theme-color" content="#f2f6f3">
     <title>心研同伴 | 留一点时间给自己</title>
     <link rel="preload" as="image" href="{% static 'core/images/companion-poses.png' %}">
-    <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=1">
-    <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=chat-nav-3">
-    <script defer src="{% static 'core/js/page-transition.js' %}?v=1"></script>
+    <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=2">
+    <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=guided-flow-1">
+    <script defer src="{% static 'core/js/sound-effects.js' %}?v=2"></script>
+    <script defer src="{% static 'core/js/page-transition.js' %}?v=2"></script>
 </head>
 <body>
     <main class="shell">
@@ -33,6 +34,7 @@
                         <span class="chat-nav-copy"><strong>心灵随笔</strong><small>写下再轻轻放下</small></span>
                         <span class="chat-nav-arrow" aria-hidden="true">↗</span>
                     </a>
+                    {% include 'core/_sound_toggle.html' %}
                 </nav>
                 <p class="intro">每一种心情，都值得<br>被温柔地听见。</p>
 
@@ -96,6 +98,16 @@
                         </button>
                     </div>
                 </header>
+
+                <div class="dialogue-path" aria-label="陪伴进度">
+                    <p id="dialogueStageLabel">先听你说</p>
+                    <ol id="dialogueStages">
+                        <li data-stage="listen" class="active" aria-current="step"><span>1</span><b>倾听此刻</b></li>
+                        <li data-stage="clarify"><span>2</span><b>看清压力</b></li>
+                        <li data-stage="control"><span>3</span><b>找到可控</b></li>
+                        <li data-stage="action"><span>4</span><b>迈出一步</b></li>
+                    </ol>
+                </div>
 
                 <div class="conversation">
                     <div id="messages" class="messages" role="log" aria-label="聊天记录" aria-live="off" tabindex="0">
@@ -162,7 +174,33 @@
             </section>
         </section>
     </main>
+    <template id="actionCardTemplate">
+        <section class="action-card arriving" aria-label="今日行动卡">
+            <header>
+                <span class="action-card-icon" aria-hidden="true"><img src="{% static 'core/icons/sprout.svg' %}" alt="" width="21" height="21"></span>
+                <div><small>今日行动卡</small><h3></h3></div>
+                <span class="action-duration"></span>
+            </header>
+            <p class="action-step"></p>
+            <p class="action-note"></p>
+            <footer>
+                <button class="action-change" type="button">换一个更轻的步骤</button>
+                <button class="action-accept" type="button">就从这一步开始</button>
+            </footer>
+            <div class="action-next" hidden>
+                <strong>接下来，按你的节奏来</strong>
+                <p class="action-next-status">可以先试十分钟。做完、卡住，或者发现这一步仍然太难时，都可以回来告诉我。</p>
+                <div class="action-progress-actions">
+                    <button class="action-start" type="button">开始这一步</button>
+                    <button class="action-complete" type="button">我完成了</button>
+                    <button class="action-stuck" type="button">我卡住了</button>
+                    <button class="action-smaller" type="button">这一步太难</button>
+                </div>
+            </div>
+            <p class="action-privacy">仅用于当前对话，刷新页面后不会保存。</p>
+        </section>
+    </template>
     {% include 'core/_page_transition.html' %}
-    <script src="{% static 'core/js/home.js' %}?v=auto-greeting-4"></script>
+    <script src="{% static 'core/js/home.js' %}?v=guided-flow-3"></script>
 </body>
 </html>
