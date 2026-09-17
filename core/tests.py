@@ -113,3 +113,17 @@ class GuidedConversationTests(TestCase):
         self.assertEqual(payload['provider'], 'fallback')
         self.assertIn(selected, payload['reply'])
         self.assertNotIn('刚才选定的那一步，现在是', payload['reply'])
+
+    @patch('core.views.generate_ai_reply', return_value=('收到你的进展了，我们来简单复盘。', 'doubao'))
+    def test_ai_reply_is_anchored_to_the_exact_selected_action(self, generate):
+        selected = '把报错信息和预期结果各写一句，再定位最早出现差异的位置。'
+        response = self.client.post(reverse('chat'), {
+            'message': '我完成了这一步。',
+            'scenario': 'coding',
+            'flow_stage': 'action',
+            'selected_action': selected,
+        })
+
+        payload = response.json()
+        self.assertEqual(payload['provider'], 'doubao')
+        self.assertTrue(payload['reply'].startswith(f'你刚才选择并尝试的是“{selected}”。'))

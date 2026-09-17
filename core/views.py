@@ -135,6 +135,7 @@ def chat(request):
         reply = build_supportive_reply(message, scenario, phase, selected_action)
         provider = 'fallback'
 
+    reply = anchor_selected_action(reply, phase, selected_action)
     action_card = build_action_card(scenario, selected_action) if phase == 'control' else None
     return JsonResponse({
         'reply': reply,
@@ -168,6 +169,16 @@ def next_phase(flow_stage):
         'control': 'control',
         'action': 'action',
     }.get(flow_stage, 'clarify')
+
+
+def anchor_selected_action(reply, phase, selected_action):
+    if not selected_action or phase not in ('control', 'action') or selected_action in reply:
+        return reply
+    if phase == 'control':
+        lead = f'你刚才选择的“{selected_action}”现在感觉有些难，我们把它再缩小一点。'
+    else:
+        lead = f'你刚才选择并尝试的是“{selected_action}”。'
+    return f'{lead}\n\n{reply}'
 
 
 def build_action_card(scenario, excluded_step=''):
