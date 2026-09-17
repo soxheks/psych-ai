@@ -54,6 +54,10 @@ const selectedAction = '打开任务清单，只圈出截止最近且最重要�
 
         assert.equal(requests[1].selected_action, selectedAction);
         assert.equal(requests[1].action_status, 'completed');
+        await page.locator('#dialogueStages li[data-stage="action"].complete').waitFor();
+        assert.equal(await page.locator('#dialogueStages li[data-stage="action"] span').textContent(), '✓');
+        assert.match(await page.locator('#dialogueStageLabel').textContent(), /已经完成/);
+        assert.equal(await page.locator('#dialogueStages li.active').count(), 0);
 
         await page.locator('#messageInput').fill('有');
         await page.locator('#sendButton').click();

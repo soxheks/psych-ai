@@ -31,6 +31,10 @@ RISK_WORDS = (
 )
 
 ACTION_STATUSES = {'selected', 'started', 'completed', 'stuck', 'adjusting'}
+RELIEF_PATTERNS = (
+    '我好多了', '好多了', '好一点了', '轻松了', '轻松一点', '轻松了一点',
+    '没那么焦虑', '没那么难受', '踏实了', '缓过来了',
+)
 COMPLETED_RESTART_PATTERNS = (
     '能不能先', '可以先做', '今天能花', '今天先做', '有没有开始',
     '还没开始', '现在开始', '先做一点', '尝试一下',
@@ -168,6 +172,7 @@ def chat(request):
         provider = 'fallback'
 
     reply = enforce_action_state(reply, selected_action, action_status)
+    reply = enforce_conversation_quality(reply, message, history, action_status)
     reply = anchor_selected_action(reply, phase, selected_action, action_status)
     reply = normalize_reply_punctuation(reply)
     action_card = build_action_card(scenario, selected_action) if phase == 'control' else None
@@ -234,8 +239,72 @@ def enforce_action_state(reply, selected_action, action_status):
     clean_action = action_text(selected_action) or '刚才那一小步'
     return (
         f'你已经完成了“{clean_action}”，这一步已经真实发生了，不需要再从头开始。\n\n'
-        '能感觉到压力轻了一点，是很值得记住的反馈。刚才最帮助你的，是只选出一项，还是把第一个动作写清楚？'
+        '能感觉到压力轻了一点，是很值得记住的反馈。先让自己缓一缓；愿意时再回看有效的方法，也完全来得及。'
     )
+
+
+def is_relief_message(message):
+    normalized = re.sub(r'[\s。！？!?~～]', '', message)
+    return normalized in ('有', '是', '有一点') or any(pattern in message for pattern in RELIEF_PATTERNS)
+
+
+def normalize_question(question):
+    return re.sub(r'[\s“”‘’"《》：，、。！？!?~～]', '', question)
+
+
+def question_is_repeated(question, previous_questions):
+    normalized = normalize_question(question)
+    if len(normalized) < 5:
+        return False
+    for previous in previous_questions:
+        old = normalize_question(previous)
+        if normalized == old or normalized in old or old in normalized:
+            return True
+        shorter, longer = sorted((normalized, old), key=len)
+        if len(shorter) >= 8 and len(set(shorter) & set(longer)) / len(set(shorter)) >= 0.86:
+            return True
+    return False
+
+
+def remove_repeated_questions(reply, history):
+    previous_questions = []
+    for item in history:
+        if item.get('role') == 'assistant':
+            previous_questions.extend(re.findall(r'[^。！；;\n～~]*[？?]', item.get('content', '')))
+    if not previous_questions:
+        return reply, False
+
+    repeated = False
+
+    def keep_or_remove(match):
+        nonlocal repeated
+        question = match.group(0)
+        if question_is_repeated(question, previous_questions):
+            repeated = True
+            return ''
+        return question
+
+    cleaned = re.sub(r'[^。！；;\n～~]*[？?]', keep_or_remove, reply)
+    cleaned = re.sub(r'[ \t]+\n', '\n', cleaned)
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip(' \n，,；;')
+    return cleaned, repeated
+
+
+def completed_relief_reply():
+    return (
+        '听到你说“好多了”，我也替你松了一口气。你已经让混乱的事情清楚了一点，'
+        '也重新找回了一些掌控感，这份变化很真实。\n\n'
+        '刚才这一小步已经完成了，现在不用急着回答更多问题。先让自己在这份轻松里停一会儿吧。'
+    )
+
+
+def enforce_conversation_quality(reply, message, history, action_status):
+    reply, repeated = remove_repeated_questions(reply, history)
+    if action_status == 'completed' and is_relief_message(message):
+        return completed_relief_reply()
+    if repeated and not reply:
+        return '我不继续追问了。你已经说得很清楚，我们可以先在这里停一会儿，我会陪着你。'
+    return reply
 
 
 def normalize_reply_punctuation(reply):
@@ -286,14 +355,11 @@ def build_supportive_reply(message, scenario, phase='clarify', selected_action='
     if phase == 'action':
         action = action_text(selected_action) or '刚才选定的那一步'
         if action_status == 'completed':
-            if message.strip() in ('有', '是', '有一点', '轻松了一点', '轻松一点'):
-                return (
-                    f'你已经完成了“{action}”。能感觉到轻松一点，说明把任务缩小后，你真的找到了可以落脚的位置。\n\n'
-                    '刚才最帮助你的，是只专注一项，还是把第一个动作写得很具体？'
-                )
+            if is_relief_message(message):
+                return completed_relief_reply()
             return (
-                f'你完成的是“{action}”。这不是一句笼统的“有进展”，而是一个已经发生的具体行动。\n\n'
-                '回想一下，是什么帮助你开始并完成了它？我们可以把这个方法留给下一次。'
+                f'收到啦，你已经完成了“{action}”。在有压力的时候还能迈出并完成这一小步，很不容易。\n\n'
+                '如果你愿意，我们可以把有效的方法留给下一次；如果现在只想休息一下，也完全可以。'
             )
         if action_status == 'stuck' or '卡住' in message:
             return (

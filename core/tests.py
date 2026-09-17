@@ -31,7 +31,7 @@ class PageTests(TestCase):
         self.assertIn('public', journal['Cache-Control'])
         self.assertEqual(worker['Content-Type'], 'application/javascript')
         self.assertEqual(worker['Service-Worker-Allowed'], '/')
-        self.assertContains(worker, 'mindmate-pages-v2')
+        self.assertContains(worker, 'mindmate-pages-v3')
 
     def test_csrf_endpoint_returns_a_token(self):
         response = self.client.get(reverse('csrf'))
@@ -122,6 +122,12 @@ class GuidedConversationTests(TestCase):
         self.assertIn('学生最新表达：我最怕来不及。', prompt)
         self.assertIn('用户已选择的行动：列出今晚最重要的一项任务', prompt)
         self.assertIn('行动当前状态：已选择', prompt)
+        self.assertIn('不要重复上一轮未回答的问题', build_user_prompt(
+            '我好多了。',
+            'competition',
+            phase='action',
+            action_status='completed',
+        ))
 
     @patch('core.views.generate_ai_reply', side_effect=AIUnavailable())
     def test_fallback_knows_the_exact_selected_action(self, generate):
@@ -157,6 +163,29 @@ class GuidedConversationTests(TestCase):
         self.assertIn('已经完成了', payload['reply'])
         self.assertNotIn('今天能花', payload['reply'])
         self.assertNotIn('先做一点', payload['reply'])
+
+    @patch('core.views.generate_ai_reply', return_value=(
+        '太好啦，能整理清楚真的很厉害～那这次整理时，你用到的工具具体帮你解决了什么小难题呀？',
+        'doubao',
+    ))
+    def test_completed_relief_is_comforted_without_repeating_question(self, generate):
+        repeated_question = '这次整理时，你用到的工具具体帮你解决了什么小难题呀？'
+        response = self.client.post(reverse('chat'), {
+            'message': '我好多了',
+            'scenario': 'research',
+            'flow_stage': 'action',
+            'selected_action': '写下当前假设和下一项验证操作。',
+            'action_status': 'completed',
+            'history': '[{"role":"assistant","content":"能发现可复用的细节很好。' + repeated_question + '"}]',
+        })
+
+        payload = response.json()
+        self.assertEqual(payload['provider'], 'doubao')
+        self.assertEqual(payload['action_status'], 'completed')
+        self.assertIn('我也替你松了一口气', payload['reply'])
+        self.assertIn('已经完成了', payload['reply'])
+        self.assertNotIn(repeated_question, payload['reply'])
+        self.assertNotIn('？', payload['reply'])
 
     @patch('core.views.generate_ai_reply', return_value=('我们看看下一步。', 'doubao'))
     def test_action_anchor_does_not_duplicate_terminal_punctuation(self, generate):

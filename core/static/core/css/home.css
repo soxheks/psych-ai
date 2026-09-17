@@ -168,6 +168,9 @@ h2 { font-size: 20px; font-weight: 600; }
 .dialogue-path li.done span { color: #fff; border-color: #7eaa93; background: #7eaa93; }
 .dialogue-path li.done:not(:last-child)::after { background: #9bbca8; }
 .dialogue-path li.active span { border-color: #4f826a; box-shadow: 0 0 0 3px #e5f0e8; font-weight: 700; }
+.dialogue-path.is-complete { background: #f6fbf7; }
+.dialogue-path.is-complete > p { color: #35664f; font-weight: 600; }
+.dialogue-path li.complete span { border-color: #4f826a; background: #4f826a; box-shadow: 0 0 0 3px #e5f0e8; font-weight: 700; }
 .conversation { display: grid; grid-template-columns: minmax(0, 1fr) 268px; grid-template-rows: minmax(0, 1fr); min-height: 0; overflow: hidden; }
 .messages {
     position: relative;

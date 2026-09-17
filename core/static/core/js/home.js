@@ -83,15 +83,23 @@ const providerLabels = {
     fallback: '基础陪伴模式',
 };
 
-function updateDialogueStage(stage) {
+function updateDialogueStage(stage, status = actionStatus) {
     if (!stageOrder.includes(stage)) return;
     flowStage = stage;
     const activeIndex = stageOrder.indexOf(stage);
-    dialogueStageLabel.textContent = stageLabels[stage];
+    const flowComplete = stage === 'action' && status === 'completed';
+    dialogueStageLabel.textContent = flowComplete ? '这一小步，已经完成' : stageLabels[stage];
+    dialogueStageLabel.closest('.dialogue-path')?.classList.toggle('is-complete', flowComplete);
     dialogueStages.forEach((item, index) => {
-        item.classList.toggle('active', index === activeIndex);
-        item.classList.toggle('done', index < activeIndex);
-        if (index === activeIndex) item.setAttribute('aria-current', 'step');
+        const completedStage = index < activeIndex || (flowComplete && index === activeIndex);
+        const activeStage = !flowComplete && index === activeIndex;
+        item.classList.toggle('active', activeStage);
+        item.classList.toggle('done', completedStage);
+        item.classList.toggle('complete', flowComplete && index === activeIndex);
+        const marker = item.querySelector('span');
+        if (marker) marker.textContent = flowComplete && index === activeIndex ? '✓' : String(index + 1);
+        item.setAttribute('aria-label', `第${index + 1}步 ${item.querySelector('b')?.textContent || ''}${completedStage ? '，已完成' : ''}`);
+        if (activeStage) item.setAttribute('aria-current', 'step');
         else item.removeAttribute('aria-current');
     });
 }
@@ -159,6 +167,7 @@ function renderActionCard(card) {
         actionCard.classList.add('is-following-up', state);
         nextStatus.textContent = status;
         actionStatus = nextActionStatus;
+        updateDialogueStage(state === 'is-adjusting' ? 'control' : 'action', actionStatus);
         if (!submitGuidedUpdate(message, state === 'is-adjusting' ? 'control' : 'action')) {
             actionCard.classList.remove('is-following-up', state);
         }
@@ -368,8 +377,8 @@ form.addEventListener('submit', async (event) => {
         supportMode = Boolean(data.risk);
         thinking.classList.toggle('risk', supportMode);
         lastReply = data.reply;
-        if (!supportMode) updateDialogueStage(data.stage);
         if (typeof data.action_status === 'string') actionStatus = data.action_status;
+        if (!supportMode) updateDialogueStage(data.stage, actionStatus);
         revealing = true;
         updateCompanion();
         if (voiceEnabled) speakReply(data.reply);
