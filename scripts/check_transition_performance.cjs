@@ -23,8 +23,10 @@ async function measureTransition(page, selector, expectedURL) {
     assert(bounds, `missing transition target: ${selector}`);
     const startedAt = Date.now();
     await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
-    await page.waitForURL(expectedURL, { timeout: 3000 });
+    await page.waitForURL(expectedURL, { timeout: 3000, waitUntil: 'commit' });
     const navigationMs = Date.now() - startedAt;
+    await page.waitForLoadState('domcontentloaded');
+    await page.waitForFunction(() => document.querySelector('.page-transition')?.classList.contains('is-arriving'));
     await page.waitForFunction(() => !document.querySelector('.page-transition')?.classList.contains('is-arriving'));
     return {
         navigationMs,
@@ -60,7 +62,7 @@ async function measureTransition(page, selector, expectedURL) {
         await page.goto(landingURL);
         const reducedStartedAt = Date.now();
         await page.locator('.button-secondary').click();
-        await page.waitForURL(journalURL, { timeout: 2000 });
+        await page.waitForURL(journalURL, { timeout: 2000, waitUntil: 'commit' });
         const reducedMotionMs = Date.now() - reducedStartedAt;
         assert(reducedMotionMs < 350, `reduced-motion navigation took ${reducedMotionMs}ms`);
 
