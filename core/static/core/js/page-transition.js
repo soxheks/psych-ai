@@ -5,6 +5,9 @@
     const label = document.getElementById('transitionLabel');
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
     const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
+    const prefetchedPages = new Set();
+    const leaveDelay = 285;
+    const arriveDuration = 390;
     const motionSelector = [
         '.site-header a', '.button', '.path-item', '.chat-site-nav a',
         '.journal-header a', '.paper-footer button',
@@ -12,13 +15,34 @@
     ].join(', ');
     let leaving = false;
 
+    const getInternalDestination = (link) => {
+        if (!link || link.target === '_blank' || link.hasAttribute('download') || link.dataset.noTransition !== undefined) return null;
+        const destination = new URL(link.href, window.location.href);
+        const sameDocument = destination.pathname === window.location.pathname
+            && destination.search === window.location.search;
+        if (destination.origin !== window.location.origin || sameDocument) return null;
+        return destination;
+    };
+
+    const prefetchPage = (link) => {
+        const destination = getInternalDestination(link);
+        if (!destination || prefetchedPages.has(destination.href)) return;
+        prefetchedPages.add(destination.href);
+
+        const hint = document.createElement('link');
+        hint.rel = 'prefetch';
+        hint.as = 'document';
+        hint.href = destination.href;
+        document.head.append(hint);
+    };
+
     try {
         const arrivalLabel = sessionStorage.getItem('mindmate-transition');
         if (arrivalLabel && !reducedMotion.matches) {
             label.textContent = arrivalLabel;
             overlay.classList.add('is-arriving');
             sessionStorage.removeItem('mindmate-transition');
-            window.setTimeout(() => overlay.classList.remove('is-arriving'), 760);
+            window.setTimeout(() => overlay.classList.remove('is-arriving'), arriveDuration);
         }
     } catch {
         // Storage may be disabled; navigation still works without an arrival animation.
@@ -27,24 +51,36 @@
     document.addEventListener('click', (event) => {
         const link = event.target.closest('a[href]');
         if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-        if (link.target === '_blank' || link.hasAttribute('download') || link.dataset.noTransition !== undefined) return;
-
-        const destination = new URL(link.href, window.location.href);
-        const sameDocument = destination.pathname === window.location.pathname
-            && destination.search === window.location.search;
-        if (destination.origin !== window.location.origin || (sameDocument && destination.hash)) return;
-        if (sameDocument || leaving || reducedMotion.matches) return;
+        const destination = getInternalDestination(link);
+        if (!destination || leaving || reducedMotion.matches) return;
 
         event.preventDefault();
         leaving = true;
+        prefetchPage(link);
         window.MindmateSounds?.transition();
         const nextLabel = link.dataset.transitionLabel || link.getAttribute('aria-label') || link.textContent.trim() || '去往下一站';
         label.textContent = nextLabel.replace(/\s+/g, ' ');
         overlay.classList.remove('is-arriving');
         overlay.classList.add('is-leaving');
         try { sessionStorage.setItem('mindmate-transition', nextLabel); } catch { /* no-op */ }
-        window.setTimeout(() => window.location.assign(destination.href), 730);
+        window.setTimeout(() => window.location.assign(destination.href), leaveDelay);
     });
+
+    document.addEventListener('pointerover', (event) => {
+        if (!finePointer.matches) return;
+        prefetchPage(event.target.closest('a[href]'));
+    }, { passive: true });
+    document.addEventListener('focusin', (event) => prefetchPage(event.target.closest('a[href]')));
+    document.addEventListener('touchstart', (event) => prefetchPage(event.target.closest('a[href]')), { passive: true });
+
+    const prefetchNavigation = () => {
+        document.querySelectorAll('a[href]').forEach(prefetchPage);
+    };
+    if ('requestIdleCallback' in window) {
+        window.requestIdleCallback(prefetchNavigation, { timeout: 1200 });
+    } else {
+        window.setTimeout(prefetchNavigation, 800);
+    }
 
     document.querySelectorAll(motionSelector).forEach((control) => {
         control.classList.add('motion-reactive');
