@@ -45,7 +45,7 @@ class PageTests(TestCase):
         self.assertIn('public', journal['Cache-Control'])
         self.assertEqual(worker['Content-Type'], 'application/javascript')
         self.assertEqual(worker['Service-Worker-Allowed'], '/')
-        self.assertContains(worker, 'mindmate-pages-v7')
+        self.assertContains(worker, 'mindmate-pages-v8')
 
     def test_csrf_endpoint_returns_a_token(self):
         response = self.client.get(reverse('csrf'))

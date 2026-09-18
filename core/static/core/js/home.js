@@ -1012,8 +1012,16 @@ function waitForChineseVoices() {
 }
 
 function selectCompanionVoice(voices) {
-    // Voice names are device-specific; prefer a light Chinese voice over list order.
-    const preferredNames = [/xiaoyi|晓伊/i, /yaoyao|瑶瑶/i, /xiaoxiao|晓晓/i, /huihui|慧慧/i, /tingting|婷婷/i];
+    // Voice names are device-specific; prefer youthful, light Chinese voices.
+    const preferredNames = [
+        /xiaoyi|晓伊/i,
+        /yaoyao|瑶瑶/i,
+        /xiaoxiao|晓晓/i,
+        /xiaomeng|晓梦/i,
+        /child|girl|童声|少女/i,
+        /huihui|慧慧/i,
+        /tingting|婷婷/i,
+    ];
     for (const name of preferredNames) {
         const match = voices.find((voice) => name.test(voice.name));
         if (match) return match;
@@ -1039,9 +1047,9 @@ async function speakReply(text, { preview = false, opening = false } = {}) {
     const current = new SpeechSynthesisUtterance(text);
     current.voice = selectCompanionVoice(voices);
     current.lang = current.voice.lang;
-    current.pitch = 1.22;
-    current.rate = 1.02;
-    current.volume = 0.9;
+    current.pitch = 1.42;
+    current.rate = 1.06;
+    current.volume = 0.84;
     utterance = current;
     const finish = (notice = '', retryOpening = false) => {
         if (utterance !== current) return;
