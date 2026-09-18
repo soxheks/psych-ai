@@ -14,7 +14,7 @@
     function updateToggle() {
         toggle.hidden = false;
         toggle.setAttribute('aria-pressed', String(!muted));
-        const label = muted ? '开启界面音效' : '关闭界面音效';
+        const label = muted ? '开启页面声音' : '关闭页面声音';
         toggle.setAttribute('aria-label', label);
         toggle.title = label;
         toggle.querySelector('.effects-on').hidden = muted;
@@ -134,24 +134,28 @@
         if (muted) stop();
         try { localStorage.setItem('mindmate-effects-muted', String(muted)); } catch { /* no-op */ }
         updateToggle();
+        window.dispatchEvent(new CustomEvent('mindmate-soundchange', { detail: { muted } }));
     });
     window.addEventListener('storage', (event) => {
         if (event.key !== 'mindmate-effects-muted' && event.key !== null) return;
         muted = event.newValue === 'true';
         if (muted) stop();
         updateToggle();
+        window.dispatchEvent(new CustomEvent('mindmate-soundchange', { detail: { muted } }));
     });
     window.addEventListener('pagehide', stop);
     window.addEventListener('pageshow', (event) => {
         if (!event.persisted) return;
         try { muted = localStorage.getItem('mindmate-effects-muted') === 'true'; } catch { /* no-op */ }
         updateToggle();
+        window.dispatchEvent(new CustomEvent('mindmate-soundchange', { detail: { muted } }));
     });
     document.addEventListener('visibilitychange', () => { if (document.hidden) stop(); });
     reducedMotion.addEventListener('change', () => { if (reducedMotion.matches) stop(); });
     window.MindmateSounds = {
         transition: () => play('transition'),
         paperFlight: () => play('paper-flight'),
+        isMuted: () => muted,
         stop,
     };
     updateToggle();

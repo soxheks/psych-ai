@@ -103,3 +103,176 @@
     fitWindow();
     updateMotion();
 })();
+
+(() => {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const hero = document.querySelector('.hero');
+    if (!AudioContext || !hero) return;
+
+    const scale = [523.25, 659.25, 783.99, 880, 1046.5, 1174.66];
+    const phrases = [
+        [0, 2, 4],
+        [1, 3, 5],
+        [2, 0, 3],
+        [4, 2, 1],
+    ];
+    const activeVoices = new Set();
+    let context;
+    let master;
+    let filter;
+    let stereo;
+    let sway;
+    let swayDepth;
+    let phraseTimer;
+    let phraseIndex = 0;
+    let running = false;
+    hero.dataset.ambientState = 'waiting';
+
+    function isMuted() {
+        return window.MindmateSounds?.isMuted?.() ?? true;
+    }
+
+    function buildAudioGraph() {
+        if (master) return;
+        master = context.createGain();
+        filter = context.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = 2400;
+        filter.Q.value = .35;
+        master.gain.value = .0001;
+        if (context.createStereoPanner) {
+            stereo = context.createStereoPanner();
+            sway = context.createOscillator();
+            swayDepth = context.createGain();
+            sway.type = 'sine';
+            sway.frequency.value = .045;
+            swayDepth.gain.value = .26;
+            sway.connect(swayDepth).connect(stereo.pan);
+            filter.connect(stereo).connect(master).connect(context.destination);
+            sway.start();
+        } else {
+            filter.connect(master).connect(context.destination);
+        }
+    }
+
+    function makeChime(frequency, when, strength, pan) {
+        const voice = context.createGain();
+        const partial = context.createGain();
+        const tone = context.createOscillator();
+        const shimmer = context.createOscillator();
+        const panner = context.createStereoPanner?.();
+        const destination = panner || filter;
+        const duration = 4.4;
+
+        tone.type = 'sine';
+        shimmer.type = 'sine';
+        tone.frequency.setValueAtTime(frequency, when);
+        shimmer.frequency.setValueAtTime(frequency * 2.006, when);
+        voice.gain.setValueAtTime(.0001, when);
+        voice.gain.exponentialRampToValueAtTime(.048 * strength, when + .11);
+        voice.gain.exponentialRampToValueAtTime(.0001, when + duration);
+        partial.gain.setValueAtTime(.0001, when);
+        partial.gain.exponentialRampToValueAtTime(.009 * strength, when + .16);
+        partial.gain.exponentialRampToValueAtTime(.0001, when + 2.8);
+        if (panner) panner.pan.value = pan;
+        tone.connect(voice).connect(destination);
+        shimmer.connect(partial).connect(destination);
+        if (panner) panner.connect(filter);
+
+        const record = { tone, shimmer, voice, partial, panner };
+        activeVoices.add(record);
+        let ended = 0;
+        const cleanup = () => {
+            ended += 1;
+            if (ended < 2) return;
+            activeVoices.delete(record);
+            tone.disconnect();
+            shimmer.disconnect();
+            voice.disconnect();
+            partial.disconnect();
+            panner?.disconnect();
+        };
+        tone.onended = cleanup;
+        shimmer.onended = cleanup;
+        tone.start(when);
+        shimmer.start(when);
+        tone.stop(when + duration + .05);
+        shimmer.stop(when + duration + .05);
+    }
+
+    function schedulePhrase() {
+        if (!running || document.hidden || isMuted()) return;
+        const notes = phrases[phraseIndex % phrases.length];
+        const now = context.currentTime + .08;
+        notes.forEach((note, index) => {
+            const drift = index === 0 ? 0 : (index * 1.18 + (phraseIndex % 2) * .22);
+            const strength = 1 - index * .12;
+            const pan = Math.max(-.7, Math.min(.7, ((phraseIndex + index * 2) % 5 - 2) * .27));
+            makeChime(scale[note], now + drift, strength, pan);
+        });
+        phraseIndex += 1;
+        const pause = 7600 + (phraseIndex % 3) * 1300;
+        phraseTimer = window.setTimeout(schedulePhrase, pause);
+    }
+
+    async function start() {
+        if (running || document.hidden || isMuted()) return;
+        try {
+            context ||= new AudioContext();
+            if (context.state !== 'running') await context.resume();
+            if (context.state !== 'running' || document.hidden || isMuted()) return;
+            buildAudioGraph();
+            running = true;
+            hero.dataset.ambientState = 'playing';
+            const now = context.currentTime;
+            master.gain.cancelScheduledValues(now);
+            master.gain.setValueAtTime(Math.max(.0001, master.gain.value), now);
+            master.gain.exponentialRampToValueAtTime(.32, now + 1.6);
+            schedulePhrase();
+        } catch {
+            stop(true);
+        }
+    }
+
+    function stop(immediate = false) {
+        window.clearTimeout(phraseTimer);
+        phraseTimer = null;
+        running = false;
+        hero.dataset.ambientState = 'stopped';
+        if (!context || !master) return;
+        const now = context.currentTime;
+        master.gain.cancelScheduledValues(now);
+        master.gain.setValueAtTime(Math.max(.0001, master.gain.value), now);
+        master.gain.exponentialRampToValueAtTime(.0001, now + (immediate ? .03 : .7));
+        activeVoices.forEach(({ tone, shimmer }) => {
+            try {
+                tone.stop(now + (immediate ? .04 : .75));
+                shimmer.stop(now + (immediate ? .04 : .75));
+            } catch {
+                // A voice may have already ended while the page is leaving.
+            }
+        });
+    }
+
+    function unlock() {
+        start();
+    }
+
+    document.addEventListener('pointerdown', unlock, { once: true, capture: true });
+    document.addEventListener('keydown', unlock, { once: true, capture: true });
+    window.addEventListener('mindmate-soundchange', (event) => {
+        if (event.detail?.muted) stop();
+        else start();
+    });
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) stop(true);
+        else start();
+    });
+    window.addEventListener('pageshow', start);
+    window.addEventListener('pagehide', () => stop(true));
+    window.MindmateAmbient = {
+        start,
+        stop,
+        isPlaying: () => running,
+    };
+})();

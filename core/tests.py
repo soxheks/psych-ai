@@ -16,6 +16,9 @@ class PageTests(TestCase):
         self.assertContains(response, reverse('home'))
         self.assertContains(response, reverse('journal'))
         self.assertContains(response, '心研同伴')
+        self.assertContains(response, 'landing.js?v=2')
+        self.assertContains(response, 'sound-effects.js?v=3')
+        self.assertContains(response, '关闭页面声音')
 
     def test_chat_page_is_available_at_chat_path(self):
         response = self.client.get(reverse('home'))
@@ -42,7 +45,7 @@ class PageTests(TestCase):
         self.assertIn('public', journal['Cache-Control'])
         self.assertEqual(worker['Content-Type'], 'application/javascript')
         self.assertEqual(worker['Service-Worker-Allowed'], '/')
-        self.assertContains(worker, 'mindmate-pages-v6')
+        self.assertContains(worker, 'mindmate-pages-v7')
 
     def test_csrf_endpoint_returns_a_token(self):
         response = self.client.get(reverse('csrf'))
