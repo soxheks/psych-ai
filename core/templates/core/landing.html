@@ -9,7 +9,7 @@
     <title>心研同伴 | 把心情放在这里</title>
     <link rel="preload" as="image" href="{% static 'core/images/landing-room.jpg' %}">
     <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=4">
-    <link rel="stylesheet" href="{% static 'core/css/landing.css' %}?v=2">
+    <link rel="stylesheet" href="{% static 'core/css/landing.css' %}?v=3">
     <script defer src="{% static 'core/js/sound-effects.js' %}?v=2"></script>
     <script defer src="{% static 'core/js/page-transition.js' %}?v=4"></script>
     <script defer src="{% static 'core/js/landing.js' %}?v=1"></script>
@@ -80,6 +80,23 @@
                 </a>
             </div>
             <p class="safety-line">AI 陪伴不替代专业心理咨询或紧急救助。遇到危险时，请优先联系身边可信任的人和专业支持。</p>
+        </section>
+
+        <section class="outcome-section" aria-labelledby="outcomeTitle">
+            <div class="outcome-heading">
+                <div>
+                    <p>真实、匿名、可撤回</p>
+                    <h2 id="outcomeTitle">陪伴带来的小变化</h2>
+                </div>
+                <p>仅汇总用户主动同意贡献的结构化数据，不保存倾诉原文，也不把变化解释为医疗效果。</p>
+            </div>
+            <div class="outcome-metrics">
+                <article><span>已记录体验</span><strong>{{ outcome_total }}</strong><small>份匿名记录</small></article>
+                <article><span>完成小行动</span><strong>{{ outcome_completed }}</strong><small>{% if outcome_total %}完成率 {{ outcome_action_rate }}%{% else %}数据待积累{% endif %}</small></article>
+                <article><span>压力有所缓解</span><strong>{{ outcome_improved }}</strong><small>{% if outcome_rated %}占已前后测的 {{ outcome_improvement_rate }}%{% else %}数据待积累{% endif %}</small></article>
+                <article><span>平均压力变化</span><strong>{% if outcome_rated %}{{ outcome_average_change }}{% else %}--{% endif %}</strong><small>{% if outcome_rated %}分，正数表示降低{% else %}需要真实前后测{% endif %}</small></article>
+            </div>
+            <p class="outcome-note">当前共 {{ outcome_rated }} 份记录同时完成了前后压力评分。样本较少时只展示事实，不作效果推断。</p>
         </section>
     </main>
     {% include 'core/_page_transition.html' %}

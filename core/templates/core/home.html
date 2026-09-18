@@ -8,7 +8,7 @@
     <title>心研同伴 | 留一点时间给自己</title>
     <link rel="preload" as="image" href="{% static 'core/images/companion-poses.png' %}">
     <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=4">
-    <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=guided-flow-4">
+    <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=guided-flow-6">
     <script defer src="{% static 'core/js/sound-effects.js' %}?v=2"></script>
     <script defer src="{% static 'core/js/page-transition.js' %}?v=4"></script>
 </head>
@@ -133,7 +133,7 @@
                             <div id="initialStressCheckin" class="stress-checkin">
                                 <div class="stress-checkin-copy">
                                     <strong>此刻的压力大约有几分？</strong>
-                                    <span>可选，仅用于这次对话</span>
+                                    <span>可选，是否保存由你决定</span>
                                 </div>
                                 <div id="initialStressScale" class="stress-scale" role="group" aria-label="记录对话开始时的压力程度，1分很轻，5分很重">
                                     <button type="button" data-stress="1" aria-label="压力1分，很轻" aria-pressed="false">1</button>
@@ -185,6 +185,30 @@
                             <img src="{% static 'core/icons/send.svg' %}" alt="" width="21" height="21">
                         </button>
                     </div>
+                    <div id="conversationChoices" class="conversation-choices" aria-label="对话节奏选择" hidden>
+                        <span>此刻也可以</span>
+                        <button type="button" data-conversation-intent="stay">先陪我待一会儿</button>
+                        <button type="button" data-conversation-intent="lighter">换个轻松话题</button>
+                        <button type="button" data-conversation-intent="end">结束本次对话</button>
+                    </div>
+                    <button id="resumeConversation" class="resume-conversation" type="button" hidden>我想继续聊聊</button>
+                    <details class="data-settings composer-data-settings">
+                        <summary>数据与进度设置</summary>
+                        <div class="data-settings-body">
+                            <label class="data-choice" for="progressConsent">
+                                <input id="progressConsent" type="checkbox">
+                                <span><strong>在此设备保存本次进度</strong><small>保存最近 6 段对话、当前阶段与行动；共用设备请勿开启。</small></span>
+                            </label>
+                            <label class="data-choice" for="metricsConsent">
+                                <input id="metricsConsent" type="checkbox">
+                                <span><strong>匿名贡献本次效果数据</strong><small>仅记录场景、前后压力和是否完成，不包含对话原文；取消后删除本次记录。</small></span>
+                            </label>
+                            <div class="data-settings-actions">
+                                <button id="clearLocalProgress" type="button" hidden>清除本地记录</button>
+                                <p id="privacyStatus" role="status"></p>
+                            </div>
+                        </div>
+                    </details>
                     <p class="composer-note">AI 陪伴不替代专业心理咨询或紧急救助。<button type="button" class="safety-inline-open safety-open">查看心理安全说明</button></p>
                 </form>
                 <div id="replyAnnouncement" class="sr-only" role="status" aria-live="polite"></div>
@@ -213,15 +237,15 @@
                 </section>
                 <section class="safety-section">
                     <span aria-hidden="true">03</span>
-                    <div><h3>你的信息如何使用</h3><p>为生成回复，你发送的文字和最近几轮对话会交给网站配置的 AI 服务。请避免填写真实姓名、学号、联系方式、住址、账号密码等敏感信息。压力评分与完成小结只保留在当前页面，刷新后消失。</p></div>
+                    <div><h3>你的信息如何使用</h3><p>为生成回复，你发送的文字和最近几轮对话会交给网站配置的 AI 服务。请避免填写真实姓名、学号、联系方式、住址、账号密码等敏感信息。对话进度与匿名效果数据默认都不保存；只有你在“数据与进度设置”中主动开启后才会保存，并可随时关闭或删除。</p></div>
                 </section>
                 <section class="safety-section safety-section-urgent">
                     <span aria-hidden="true">04</span>
-                    <div><h3>出现紧急危险时</h3><p>如果你有伤害自己或他人的念头，或已经无法保证安全，请停止依赖 AI，立即联系身边可信任的人、辅导员、学校心理中心或所在地紧急救助服务，不要独自承担。</p></div>
+                    <div><h3>出现紧急危险时</h3><p>如果你有伤害自己或他人的念头，或已经无法保证安全，请停止依赖 AI，立即联系身边可信任的人、辅导员或学校心理中心。中国大陆可拨打 12356 心理援助热线；如有立即危险，拨打 110 或 120，不要独自承担。</p></div>
                 </section>
                 <div class="safety-immediate">
                     <strong>此刻正有危险？</strong>
-                    <p>先去有人的地方，远离可能造成伤害的物品，并马上联系能够到场的真人支持。</p>
+                    <p>先去有人的地方，远离可能造成伤害的物品，并马上联系能够到场的真人支持。中国大陆可拨 12356；紧急危险拨 110 或 120。</p>
                 </div>
             </div>
             <footer>
@@ -253,7 +277,18 @@
                     <button class="action-smaller" type="button">这一步太难</button>
                 </div>
             </div>
-            <p class="action-privacy">仅用于当前对话，刷新页面后不会保存。</p>
+            <p class="action-privacy">默认仅用于当前对话；主动开启本地进度后才会保存在这台设备。</p>
+        </section>
+    </template>
+    <template id="safetyCardTemplate">
+        <section class="safety-flow-card arriving" aria-label="安全支持步骤">
+            <header>
+                <span aria-hidden="true"><img src="{% static 'core/icons/shield-check.svg' %}" alt="" width="22" height="22"></span>
+                <div><small>安全支持模式</small><h3></h3></div>
+            </header>
+            <p class="safety-flow-prompt"></p>
+            <div class="safety-flow-options"></div>
+            <p class="safety-flow-note">危机状态下不会继续普通 AI 对话或生成行动卡，请优先连接能够到场的真人支持。</p>
         </section>
     </template>
     <template id="completionSummaryTemplate">
@@ -282,10 +317,10 @@
                 </div>
                 <p></p>
             </div>
-            <p class="completion-privacy">感受没有标准答案，记录仅保留在当前页面。</p>
+            <p class="completion-privacy">感受没有标准答案。默认仅保留在当前页面；是否本地保存或匿名贡献，由你在数据设置中决定。</p>
         </section>
     </template>
     {% include 'core/_page_transition.html' %}
-    <script src="{% static 'core/js/home.js' %}?v=guided-flow-8"></script>
+    <script src="{% static 'core/js/home.js' %}?v=guided-flow-10"></script>
 </body>
 </html>

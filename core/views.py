@@ -1,6 +1,8 @@
 import json
 import re
+import uuid
 
+from django.db.models import Avg, F
 from django.http import JsonResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import render
@@ -9,6 +11,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 
 from .ai_client import AIUnavailable, generate_ai_reply
+from .models import OutcomeRecord
 
 
 SCENARIO_PROMPTS = {
@@ -28,7 +31,18 @@ RISK_WORDS = (
     '伤害自己',
     '自残',
     '活不下去',
+    '想死',
+    '结束自己',
+    '割腕',
+    '跳楼',
+    '吞药',
+    '伤害别人',
+    '杀人',
 )
+
+RISK_STATES = {'active', 'supported'}
+CONVERSATION_INTENTS = {'stay', 'lighter', 'end'}
+CRISIS_CONTACTS = '在中国大陆，可拨打 12356 心理援助热线；如有立即危险，请拨打 110 或 120。'
 
 ACTION_STATUSES = {'selected', 'started', 'completed', 'stuck', 'adjusting'}
 RELIEF_PATTERNS = (
@@ -102,7 +116,7 @@ ACTION_CARDS = {
 
 @cache_control(public=True, max_age=300, s_maxage=3600, stale_while_revalidate=86400)
 def landing(request):
-    return render(request, 'core/landing.html')
+    return render(request, 'core/landing.html', outcome_summary())
 
 
 @ensure_csrf_cookie
@@ -140,21 +154,22 @@ def chat(request):
     selected_action = request.POST.get('selected_action', '').strip()[:500]
     requested_action_status = request.POST.get('action_status', '').strip()
     action_status = requested_action_status if requested_action_status in ACTION_STATUSES else ''
+    requested_risk_state = request.POST.get('risk_state', '').strip()
+    risk_state = requested_risk_state if requested_risk_state in RISK_STATES else ''
+    requested_intent = request.POST.get('conversation_intent', '').strip()
+    conversation_intent = requested_intent if requested_intent in CONVERSATION_INTENTS else ''
 
     if not message:
         return JsonResponse({'reply': '我在这里。你可以先用一句话说说：最近最压着你的那件学业相关的事是什么？'})
 
     if any(word in message for word in RISK_WORDS):
-        return JsonResponse({
-            'reply': (
-                '我听到你现在可能处在很危险、很痛苦的时刻。请先把安全放在第一位：'
-                '尽快联系身边可信任的人、辅导员、学校心理中心，或当地紧急救助渠道。'
-                '如果你愿意，也可以先回我一句“我现在身边有人”或“我现在一个人”，我们先一起把当下这几分钟稳住。'
-            ),
-            'risk': True,
-            'stage': 'safety',
-            'action_card': None,
-        })
+        return JsonResponse(build_safety_response('initial'))
+
+    if risk_state:
+        return JsonResponse(build_safety_response('followup', message, conversation_intent))
+
+    if conversation_intent:
+        return JsonResponse(build_intent_response(conversation_intent, flow_stage, action_status))
 
     phase = next_phase(flow_stage)
 
@@ -183,6 +198,184 @@ def chat(request):
         'action_status': action_status,
         'action_card': action_card,
     })
+
+
+@require_POST
+def record_outcome(request):
+    try:
+        event_id = uuid.UUID(request.POST.get('event_id', '').strip())
+    except (ValueError, AttributeError):
+        return JsonResponse({'error': 'invalid_event_id'}, status=400)
+
+    session_event_id = request.session.get('outcome_event_id')
+    if session_event_id and session_event_id != str(event_id):
+        return JsonResponse({'error': 'event_mismatch'}, status=403)
+
+    if request.POST.get('consent') == 'withdrawn':
+        if session_event_id == str(event_id):
+            OutcomeRecord.objects.filter(event_id=event_id).delete()
+            request.session.pop('outcome_event_id', None)
+        return JsonResponse({'deleted': True})
+
+    scenario = request.POST.get('scenario', 'general').strip()
+    valid_scenarios = {value for value, _ in OutcomeRecord.SCENARIOS}
+    if scenario not in valid_scenarios:
+        scenario = 'general'
+
+    try:
+        initial_stress = parse_stress(request.POST.get('initial_stress'))
+        final_stress = parse_stress(request.POST.get('final_stress'))
+    except ValueError:
+        return JsonResponse({'error': 'invalid_stress'}, status=400)
+
+    record, created = OutcomeRecord.objects.get_or_create(
+        event_id=event_id,
+        defaults={'scenario': scenario},
+    )
+    record.scenario = scenario
+    if initial_stress is not None:
+        record.initial_stress = initial_stress
+    if final_stress is not None:
+        record.final_stress = final_stress
+    if request.POST.get('action_completed') == 'true':
+        record.action_completed = True
+    record.save()
+    request.session['outcome_event_id'] = str(event_id)
+    return JsonResponse({'saved': True, 'created': created})
+
+
+def parse_stress(raw_value):
+    if raw_value in (None, ''):
+        return None
+    value = int(raw_value)
+    if value not in range(1, 6):
+        raise ValueError('Stress value must be between 1 and 5.')
+    return value
+
+
+def outcome_summary():
+    records = OutcomeRecord.objects.all()
+    total = records.count()
+    completed = records.filter(action_completed=True).count()
+    rated = records.filter(initial_stress__isnull=False, final_stress__isnull=False)
+    rated_count = rated.count()
+    improved = rated.filter(final_stress__lt=F('initial_stress')).count()
+    average_change = rated.aggregate(value=Avg(F('initial_stress') - F('final_stress')))['value']
+    return {
+        'outcome_total': total,
+        'outcome_completed': completed,
+        'outcome_rated': rated_count,
+        'outcome_improved': improved,
+        'outcome_action_rate': round(completed / total * 100) if total else None,
+        'outcome_improvement_rate': round(improved / rated_count * 100) if rated_count else None,
+        'outcome_average_change': round(float(average_change), 1) if average_change is not None else None,
+    }
+
+
+def build_intent_response(intent, flow_stage, action_status):
+    replies = {
+        'stay': '可以，我们先不回答任何问题。你不用解释，也不用马上变好。我会安静地陪你在这里停一会儿。',
+        'lighter': (
+            '好，我们先把沉重的话题放到一边。试着看看身边一种让你觉得还算舒服的颜色，'
+            '或感受一下双脚踩着地面的触感；不用告诉我答案，只给大脑一点喘息。'
+        ),
+        'end': '今天先聊到这里也很好。谢谢你愿意照顾自己的感受，已经完成的小进展不会因为停下来而消失。',
+    }
+    stage = flow_stage if flow_stage in ('listen', 'clarify', 'control', 'action') else 'listen'
+    return {
+        'reply': replies[intent],
+        'provider': 'guided',
+        'risk': False,
+        'stage': stage,
+        'action_status': action_status,
+        'action_card': None,
+        'conversation_intent': intent,
+        'ended': intent == 'end',
+    }
+
+
+def safety_card(title, prompt, options):
+    return {'title': title, 'prompt': prompt, 'options': options}
+
+
+def build_safety_response(kind, message='', conversation_intent=''):
+    if conversation_intent == 'end':
+        return {
+            'reply': f'可以先结束页面，但请不要独自承受。保持和已经联系到的人在一起或保持通话。{CRISIS_CONTACTS}',
+            'provider': 'safety',
+            'risk': True,
+            'risk_state': 'supported',
+            'stage': 'safety',
+            'action_status': '',
+            'action_card': None,
+            'safety_card': None,
+            'ended': True,
+        }
+
+    if kind == 'initial':
+        reply = (
+            '谢谢你把这么难受的情况告诉我。现在先不处理学业任务，也不继续普通对话；你的安全最重要。\n\n'
+            f'请先远离可能伤害自己或他人的物品，并尽快让一位可信任的人来到你身边，或联系辅导员和学校心理中心。{CRISIS_CONTACTS}'
+        )
+        card = safety_card('先确认此刻的安全', '请选择最接近你现在情况的一项：', [
+            {'label': '我现在安全，身边有人', 'message': '我现在安全，身边有人。'},
+            {'label': '我现在安全，但一个人', 'message': '我现在安全，但身边暂时没有人。'},
+            {'label': '我现在有危险', 'message': '我现在有立即危险，需要真人帮助。', 'urgent': True},
+        ])
+    elif '已经联系' in message or '有人正在来' in message:
+        reply = (
+            '你已经把真人支持连接起来了，这一步非常重要。请继续和对方保持通话或待在一起，'
+            f'把可能造成伤害的物品交给对方保管。{CRISIS_CONTACTS}'
+        )
+        card = safety_card('保持真人支持', '接下来不需要继续解释，可以选择：', [
+            {'label': '继续停留在安全模式', 'message': '请继续用简短的话陪我保持安全。'},
+            {'label': '结束本次对话', 'message': '我想先结束本次对话。', 'intent': 'end'},
+        ])
+    elif '有立即危险' in message or '我现在有危险' in message:
+        reply = (
+            '现在请立即行动：去有人的地方，远离可能造成伤害的物品，大声呼叫身边的人，'
+            f'不要独自等待，也不要只依靠这个页面。{CRISIS_CONTACTS}'
+        )
+        card = safety_card('立即连接真人帮助', '完成其中一项后告诉我：', [
+            {'label': '我已经联系真人支持', 'message': '我已经联系真人支持，有人正在来或正和我通话。'},
+            {'label': '暂时联系不上', 'message': '我暂时联系不上熟悉的人。', 'urgent': True},
+        ])
+    elif '一个人' in message or '没有人' in message or '联系不上' in message:
+        reply = (
+            '先不要一个人待着。请带上手机去宿舍公共区域、值班室、保卫处或其他有人的地方，'
+            f'同时联系辅导员、同学或家人。此刻不需要把情况解释得很完整，只要说“我现在需要你来陪我”。{CRISIS_CONTACTS}'
+        )
+        card = safety_card('去到有人能够看见你的地方', '当你连接到真人支持后，选择下面这项：', [
+            {'label': '我已经联系真人支持', 'message': '我已经联系真人支持，有人正在来或正和我通话。'},
+            {'label': '我现在有危险', 'message': '我现在有立即危险，需要真人帮助。', 'urgent': True},
+        ])
+    elif '身边有人' in message:
+        reply = (
+            '很好，先和这个人待在一起。请直接告诉对方：“我现在状态不安全，需要你先陪着我”，'
+            f'并请对方协助联系辅导员或学校心理中心。{CRISIS_CONTACTS}'
+        )
+        card = safety_card('让身边的人真正加入支持', '告诉对方后，可以选择：', [
+            {'label': '我已经联系真人支持', 'message': '我已经联系真人支持，有人正在来或正和我通话。'},
+            {'label': '我现在有危险', 'message': '我现在有立即危险，需要真人帮助。', 'urgent': True},
+        ])
+    else:
+        reply = '我会继续把安全放在第一位。现在请只告诉我：你身边有人吗，或者你已经联系到真人支持了吗？'
+        card = safety_card('继续确认安全', '请选择最接近的一项：', [
+            {'label': '我身边有人', 'message': '我现在身边有人。'},
+            {'label': '我现在一个人', 'message': '我现在一个人。'},
+            {'label': '我已经联系真人支持', 'message': '我已经联系真人支持，有人正在来或正和我通话。'},
+        ])
+
+    return {
+        'reply': reply,
+        'provider': 'safety',
+        'risk': True,
+        'risk_state': 'active',
+        'stage': 'safety',
+        'action_status': '',
+        'action_card': None,
+        'safety_card': card,
+    }
 
 
 def parse_history(raw_history):
