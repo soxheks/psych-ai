@@ -1,6 +1,8 @@
+import json
 import uuid
 from unittest.mock import patch
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
@@ -27,6 +29,11 @@ class PageTests(TestCase):
         self.assertContains(response, '心理沟通智能体')
         self.assertContains(response, 'initialStressScale')
         self.assertContains(response, 'completionSummaryTemplate')
+        self.assertContains(response, '匿名贡献本次结果')
+        self.assertContains(response, '我感到被理解')
+        self.assertContains(response, '建议容易执行')
+        self.assertContains(response, '本次陪伴有帮助')
+        self.assertContains(response, '我愿意再次使用')
         self.assertContains(response, '仅保留在当前页面')
         self.assertContains(response, 'safetyDialog')
         self.assertContains(response, 'AI 不能进行心理或医学诊断')
@@ -45,7 +52,7 @@ class PageTests(TestCase):
         self.assertIn('public', journal['Cache-Control'])
         self.assertEqual(worker['Content-Type'], 'application/javascript')
         self.assertEqual(worker['Service-Worker-Allowed'], '/')
-        self.assertContains(worker, 'mindmate-pages-v8')
+        self.assertContains(worker, 'mindmate-pages-v10')
 
     def test_csrf_endpoint_returns_a_token(self):
         response = self.client.get(reverse('csrf'))
@@ -63,6 +70,51 @@ class PageTests(TestCase):
 
 
 class GuidedConversationTests(TestCase):
+    @patch('core.views.stream_ai_reply')
+    def test_streaming_chat_emits_incremental_events_and_guarded_final_reply(self, stream):
+        stream.return_value = iter([
+            ('我听见这件事让你很担心。', 'doubao'),
+            ('我们先看看眼前能控制的一小步。', 'doubao'),
+        ])
+        response = self.client.post(reverse('chat'), {
+            'message': '竞赛快截止了，我有点慌。',
+            'scenario': 'competition',
+            'flow_stage': 'listen',
+            'history': '[]',
+            'stream': 'true',
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.streaming)
+        self.assertEqual(response['X-Accel-Buffering'], 'no')
+        events = [
+            json.loads(line)
+            for line in b''.join(response.streaming_content).decode('utf-8').splitlines()
+        ]
+        self.assertEqual([event['type'] for event in events], [
+            'meta', 'status', 'delta', 'delta', 'done',
+        ])
+        self.assertEqual(events[2]['text'], '我听见这件事让你很担心。')
+        self.assertEqual(events[-1]['provider'], 'doubao')
+        self.assertEqual(events[-1]['stage'], 'clarify')
+        self.assertIn('眼前能控制的一小步', events[-1]['reply'])
+
+    @patch('core.views.stream_ai_reply')
+    def test_streaming_safety_reply_bypasses_regular_model(self, stream):
+        response = self.client.post(reverse('chat'), {
+            'message': '我不想活了',
+            'stream': 'true',
+        })
+
+        events = [
+            json.loads(line)
+            for line in b''.join(response.streaming_content).decode('utf-8').splitlines()
+        ]
+        self.assertEqual([event['type'] for event in events], ['delta', 'done'])
+        self.assertTrue(events[-1]['risk'])
+        self.assertEqual(events[-1]['provider'], 'safety')
+        stream.assert_not_called()
+
     @patch('core.views.generate_ai_reply', return_value=('我听见这件事让你很担心。最压着你的部分是什么？', 'doubao'))
     def test_first_turn_moves_to_clarify_without_action_card(self, generate):
         response = self.client.post(reverse('chat'), {
@@ -284,6 +336,11 @@ class OutcomeRecordTests(TestCase):
             'initial_stress': '5',
             'final_stress': '2',
             'action_completed': 'true',
+            'understood_rating': '5',
+            'actionable_rating': '4',
+            'helpful_rating': '5',
+            'return_intent_rating': '4',
+            'feedback_note': '希望以后增加更多科研压力场景。',
         })
 
         self.assertEqual(create_response.status_code, 200)
@@ -294,6 +351,11 @@ class OutcomeRecordTests(TestCase):
         self.assertEqual(record.initial_stress, 5)
         self.assertEqual(record.final_stress, 2)
         self.assertTrue(record.action_completed)
+        self.assertEqual(record.understood_rating, 5)
+        self.assertEqual(record.actionable_rating, 4)
+        self.assertEqual(record.helpful_rating, 5)
+        self.assertEqual(record.return_intent_rating, 4)
+        self.assertEqual(record.feedback_note, '希望以后增加更多科研压力场景。')
         self.assertFalse(hasattr(record, 'message'))
 
     def test_outcome_can_be_withdrawn_and_removed(self):
@@ -334,3 +396,83 @@ class OutcomeRecordTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(OutcomeRecord.objects.count(), 0)
+
+    def test_invalid_experience_rating_is_rejected(self):
+        response = self.client.post(reverse('record_outcome'), {
+            'event_id': str(uuid.uuid4()),
+            'helpful_rating': '0',
+        })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['error'], 'invalid_rating')
+        self.assertEqual(OutcomeRecord.objects.count(), 0)
+
+    def test_feedback_note_is_trimmed_and_length_limited(self):
+        event_id = str(uuid.uuid4())
+        response = self.client.post(reverse('record_outcome'), {
+            'event_id': event_id,
+            'feedback_note': f"  {'建议' * 180}  ",
+        })
+
+        self.assertEqual(response.status_code, 200)
+        record = OutcomeRecord.objects.get(event_id=event_id)
+        self.assertEqual(len(record.feedback_note), 300)
+        self.assertFalse(record.feedback_note.startswith(' '))
+
+
+class OutcomeRecordAdminTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.admin_user = user_model.objects.create_superuser(
+            username='report-admin',
+            email='admin@example.com',
+            password='test-password',
+        )
+        self.client.force_login(self.admin_user)
+        OutcomeRecord.objects.create(
+            scenario='exam',
+            initial_stress=5,
+            final_stress=2,
+            action_completed=True,
+            understood_rating=5,
+            actionable_rating=4,
+            helpful_rating=5,
+            return_intent_rating=4,
+            feedback_note='=SUM(1,1)',
+        )
+        OutcomeRecord.objects.create(
+            scenario='coding',
+            initial_stress=3,
+            final_stress=3,
+            action_completed=False,
+            helpful_rating=2,
+            feedback_note='代码场景建议',
+        )
+
+    def test_dashboard_uses_the_current_admin_filter(self):
+        response = self.client.get(
+            reverse('admin:core_outcomerecord_changelist'),
+            {'scenario__exact': 'exam'},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        dashboard = response.context['outcome_dashboard']
+        self.assertEqual(dashboard['total'], 1)
+        self.assertEqual(dashboard['completed'], 1)
+        self.assertEqual(dashboard['action_rate'], 100)
+        self.assertEqual(dashboard['improvement_rate'], 100)
+        self.assertEqual(dashboard['averages']['helpful'], 5.0)
+        self.assertContains(response, '导出当前筛选 CSV')
+
+    def test_csv_export_keeps_filters_and_escapes_spreadsheet_formulas(self):
+        response = self.client.get(
+            reverse('admin:core_outcomerecord_export'),
+            {'scenario__exact': 'exam'},
+        )
+
+        content = response.content.decode('utf-8-sig')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('attachment;', response['Content-Disposition'])
+        self.assertIn('备考压力', content)
+        self.assertNotIn('代码调试', content)
+        self.assertIn("'=SUM(1,1)", content)

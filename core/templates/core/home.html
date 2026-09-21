@@ -8,7 +8,7 @@
     <title>心研同伴 | 留一点时间给自己</title>
     <link rel="preload" as="image" href="{% static 'core/images/companion-poses.png' %}">
     <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=4">
-    <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=guided-flow-6">
+    <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=guided-flow-8">
     <script defer src="{% static 'core/js/sound-effects.js' %}?v=3"></script>
     <script defer src="{% static 'core/js/page-transition.js' %}?v=4"></script>
 </head>
@@ -201,7 +201,7 @@
                             </label>
                             <label class="data-choice" for="metricsConsent">
                                 <input id="metricsConsent" type="checkbox">
-                                <span><strong>匿名贡献本次效果数据</strong><small>仅记录场景、前后压力和是否完成，不包含对话原文；取消后删除本次记录。</small></span>
+                                <span><strong>匿名贡献本次效果数据</strong><small>仅记录场景、前后压力、行动完成和可选体验反馈，不包含对话原文；取消后删除本次记录。</small></span>
                             </label>
                             <div class="data-settings-actions">
                                 <button id="clearLocalProgress" type="button" hidden>清除本地记录</button>
@@ -237,7 +237,7 @@
                 </section>
                 <section class="safety-section">
                     <span aria-hidden="true">03</span>
-                    <div><h3>你的信息如何使用</h3><p>为生成回复，你发送的文字和最近几轮对话会交给网站配置的 AI 服务。请避免填写真实姓名、学号、联系方式、住址、账号密码等敏感信息。对话进度与匿名效果数据默认都不保存；只有你在“数据与进度设置”中主动开启后才会保存，并可随时关闭或删除。</p></div>
+                    <div><h3>你的信息如何使用</h3><p>为生成回复，你发送的文字和最近几轮对话会交给网站配置的 AI 服务。请避免填写真实姓名、学号、联系方式、住址、账号密码等敏感信息。对话进度与匿名效果数据默认都不保存；只有你在“数据与进度设置”或完成小结中主动开启后才会保存，并可随时关闭或删除。</p></div>
                 </section>
                 <section class="safety-section safety-section-urgent">
                     <span aria-hidden="true">04</span>
@@ -317,10 +317,53 @@
                 </div>
                 <p></p>
             </div>
-            <p class="completion-privacy">感受没有标准答案。默认仅保留在当前页面；是否本地保存或匿名贡献，由你在数据设置中决定。</p>
+            <div class="completion-feedback">
+                <div class="completion-feedback-heading">
+                    <strong>这次陪伴体验怎么样？</strong>
+                    <small>可选，1 分表示不符合，5 分表示非常符合</small>
+                </div>
+                <div class="experience-rating-list">
+                    <div class="experience-rating" data-feedback-field="understood_rating">
+                        <span>我感到被理解</span>
+                        <div role="group" aria-label="我感到被理解，1到5分">
+                            <button type="button" data-rating="1" aria-pressed="false">1</button><button type="button" data-rating="2" aria-pressed="false">2</button><button type="button" data-rating="3" aria-pressed="false">3</button><button type="button" data-rating="4" aria-pressed="false">4</button><button type="button" data-rating="5" aria-pressed="false">5</button>
+                        </div>
+                    </div>
+                    <div class="experience-rating" data-feedback-field="actionable_rating">
+                        <span>建议容易执行</span>
+                        <div role="group" aria-label="建议容易执行，1到5分">
+                            <button type="button" data-rating="1" aria-pressed="false">1</button><button type="button" data-rating="2" aria-pressed="false">2</button><button type="button" data-rating="3" aria-pressed="false">3</button><button type="button" data-rating="4" aria-pressed="false">4</button><button type="button" data-rating="5" aria-pressed="false">5</button>
+                        </div>
+                    </div>
+                    <div class="experience-rating" data-feedback-field="helpful_rating">
+                        <span>本次陪伴有帮助</span>
+                        <div role="group" aria-label="本次陪伴有帮助，1到5分">
+                            <button type="button" data-rating="1" aria-pressed="false">1</button><button type="button" data-rating="2" aria-pressed="false">2</button><button type="button" data-rating="3" aria-pressed="false">3</button><button type="button" data-rating="4" aria-pressed="false">4</button><button type="button" data-rating="5" aria-pressed="false">5</button>
+                        </div>
+                    </div>
+                    <div class="experience-rating" data-feedback-field="return_intent_rating">
+                        <span>我愿意再次使用</span>
+                        <div role="group" aria-label="我愿意再次使用，1到5分">
+                            <button type="button" data-rating="1" aria-pressed="false">1</button><button type="button" data-rating="2" aria-pressed="false">2</button><button type="button" data-rating="3" aria-pressed="false">3</button><button type="button" data-rating="4" aria-pressed="false">4</button><button type="button" data-rating="5" aria-pressed="false">5</button>
+                        </div>
+                    </div>
+                </div>
+                <label class="completion-feedback-note">
+                    <span>还有什么想告诉我们？</span>
+                    <textarea maxlength="300" rows="2" placeholder="可选，请不要填写姓名、学号或联系方式"></textarea>
+                </label>
+            </div>
+            <div class="completion-consent">
+                <label class="completion-consent-choice">
+                    <input class="completion-metrics-consent" type="checkbox">
+                    <span><strong>匿名贡献本次结果</strong><small>仅上传场景、前后评分、行动完成情况和以上体验反馈，不包含对话原文；取消后删除本次记录。</small></span>
+                </label>
+                <p class="completion-consent-status" role="status">默认关闭，未同意时内容仅保留在当前页面。</p>
+            </div>
+            <p class="completion-privacy">感受没有标准答案。匿名贡献完全自愿，不影响继续使用。</p>
         </section>
     </template>
     {% include 'core/_page_transition.html' %}
-    <script src="{% static 'core/js/home.js' %}?v=guided-flow-11"></script>
+    <script src="{% static 'core/js/home.js' %}?v=guided-flow-13"></script>
 </body>
 </html>

@@ -41,8 +41,8 @@ const speech = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in wind
 const openingGreeting = '你好呀，我是心研同伴。先陪你听听自己的心情，再一起把眼前的压力拆小一点。最近，哪件事最让你挂心？';
 const PROGRESS_KEY = 'mindmate-chat-progress-v1';
 const PROGRESS_CONSENT_KEY = 'mindmate-progress-consent-v1';
-const METRICS_CONSENT_KEY = 'mindmate-metrics-consent-v1';
-const OUTCOME_ID_KEY = 'mindmate-outcome-id-v1';
+const METRICS_CONSENT_KEY = 'mindmate-metrics-consent-v2';
+const OUTCOME_ID_KEY = 'mindmate-outcome-id-v2';
 
 function readCookie(name) {
     const prefix = `${name}=`;
@@ -89,6 +89,31 @@ function removeStorage(key) {
     }
 }
 
+function readSession(key) {
+    try {
+        return window.sessionStorage.getItem(key);
+    } catch {
+        return null;
+    }
+}
+
+function writeSession(key, value) {
+    try {
+        window.sessionStorage.setItem(key, value);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function removeSession(key) {
+    try {
+        window.sessionStorage.removeItem(key);
+    } catch {
+        // Consent and identifiers remain limited to the current page when storage is unavailable.
+    }
+}
+
 function createEventId() {
     if (window.crypto?.randomUUID) return window.crypto.randomUUID();
     const bytes = new Uint8Array(16);
@@ -131,6 +156,14 @@ let persistEnabled = false;
 let metricsEnabled = false;
 let restoringProgress = false;
 let outcomeId = '';
+let outcomeSaveTimer = null;
+let feedbackNote = '';
+const experienceRatings = {
+    understood_rating: null,
+    actionable_rating: null,
+    helpful_rating: null,
+    return_intent_rating: null,
+};
 const conversationHistory = [];
 
 const stageLabels = {
@@ -150,6 +183,12 @@ const providerLabels = {
 
 function setPrivacyStatus(message) {
     if (privacyStatus) privacyStatus.textContent = message;
+}
+
+function setCompletionConsentStatus(message) {
+    document.querySelectorAll('.completion-consent-status').forEach((status) => {
+        status.textContent = message;
+    });
 }
 
 function removeSavedProgress(message = '') {
@@ -185,8 +224,8 @@ function saveProgress() {
 async function recordOutcome({ withdrawn = false } = {}) {
     if (restoringProgress || (!metricsEnabled && !withdrawn)) return;
     if (!outcomeId) {
-        outcomeId = readStorage(OUTCOME_ID_KEY) || createEventId();
-        writeStorage(OUTCOME_ID_KEY, outcomeId);
+        outcomeId = readSession(OUTCOME_ID_KEY) || createEventId();
+        writeSession(OUTCOME_ID_KEY, outcomeId);
     }
     try {
         await ensureCsrfToken();
@@ -196,6 +235,11 @@ async function recordOutcome({ withdrawn = false } = {}) {
             initial_stress: initialStress === null ? '' : String(initialStress),
             final_stress: finalStress === null ? '' : String(finalStress),
             action_completed: String(actionStatus === 'completed'),
+            understood_rating: experienceRatings.understood_rating === null ? '' : String(experienceRatings.understood_rating),
+            actionable_rating: experienceRatings.actionable_rating === null ? '' : String(experienceRatings.actionable_rating),
+            helpful_rating: experienceRatings.helpful_rating === null ? '' : String(experienceRatings.helpful_rating),
+            return_intent_rating: experienceRatings.return_intent_rating === null ? '' : String(experienceRatings.return_intent_rating),
+            feedback_note: feedbackNote,
         });
         if (withdrawn) body.set('consent', 'withdrawn');
         const response = await fetch('/api/outcomes/', {
@@ -209,14 +253,49 @@ async function recordOutcome({ withdrawn = false } = {}) {
         });
         if (!response.ok) throw new Error('Outcome request failed');
         if (withdrawn) {
-            removeStorage(OUTCOME_ID_KEY);
+            removeSession(OUTCOME_ID_KEY);
             outcomeId = '';
             setPrivacyStatus('本次匿名数据已删除。');
+            setCompletionConsentStatus('本次匿名记录已删除，后续填写只保留在当前页面。');
         } else {
             setPrivacyStatus('已匿名记录本次的结构化结果，不包含对话原文。');
+            setCompletionConsentStatus('已匿名保存结构化结果，不包含对话原文。');
         }
     } catch {
         setPrivacyStatus('匿名数据暂未保存，当前对话不受影响。');
+        setCompletionConsentStatus('暂未保存成功，可以稍后重新开启匿名贡献。');
+    }
+}
+
+function scheduleOutcomeRecord() {
+    window.clearTimeout(outcomeSaveTimer);
+    if (!metricsEnabled) return;
+    outcomeSaveTimer = window.setTimeout(() => recordOutcome(), 450);
+}
+
+function syncMetricsControls() {
+    if (metricsConsent) metricsConsent.checked = metricsEnabled;
+    document.querySelectorAll('.completion-metrics-consent').forEach((control) => {
+        control.checked = metricsEnabled;
+    });
+    document.querySelectorAll('.completion-consent-status').forEach((status) => {
+        status.textContent = metricsEnabled
+            ? '已开启匿名贡献，以上结构化结果会自动更新。'
+            : '默认关闭，未同意时内容仅保留在当前页面。';
+    });
+}
+
+function setMetricsEnabled(enabled) {
+    metricsEnabled = Boolean(enabled);
+    writeSession(METRICS_CONSENT_KEY, String(metricsEnabled));
+    syncMetricsControls();
+    if (metricsEnabled) {
+        recordOutcome();
+    } else if (outcomeId || readSession(OUTCOME_ID_KEY)) {
+        outcomeId = outcomeId || readSession(OUTCOME_ID_KEY);
+        recordOutcome({ withdrawn: true });
+    } else {
+        setPrivacyStatus('未启用匿名效果数据。');
     }
 }
 
@@ -407,6 +486,8 @@ function renderCompletionSummary(restoredRating = null) {
     const prompt = summary.querySelector('.completion-prompt');
     const result = summary.querySelector('.completion-result');
     const comparison = summary.querySelector('.stress-comparison');
+    const completionConsent = summary.querySelector('.completion-metrics-consent');
+    const feedbackTextarea = summary.querySelector('.completion-feedback-note textarea');
     summary.querySelector('.completion-action').textContent = `你完成了：${action}`;
     prompt.textContent = initialStress === null
         ? '现在，再轻轻感受一下：此刻的压力大约有几分？'
@@ -441,7 +522,28 @@ function renderCompletionSummary(restoredRating = null) {
     ratingButtons.forEach((button) => {
         button.addEventListener('click', () => applyRating(button.dataset.stress));
     });
+    summary.querySelectorAll('[data-feedback-field]').forEach((group) => {
+        const field = group.dataset.feedbackField;
+        group.querySelectorAll('[data-rating]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const value = Number(button.dataset.rating);
+                experienceRatings[field] = value;
+                group.querySelectorAll('[data-rating]').forEach((item) => {
+                    item.setAttribute('aria-pressed', String(item === button));
+                });
+                announcement.textContent = `已记录“${group.querySelector('span').textContent}”${value}分。`;
+                scheduleOutcomeRecord();
+            });
+        });
+    });
+    feedbackTextarea?.addEventListener('input', () => {
+        feedbackNote = feedbackTextarea.value.trim().slice(0, 300);
+        scheduleOutcomeRecord();
+    });
+    completionConsent.checked = metricsEnabled;
+    completionConsent.addEventListener('change', () => setMetricsEnabled(completionConsent.checked));
     messages.append(summary);
+    syncMetricsControls();
     if (restoredRating !== null) applyRating(restoredRating, false);
     announcement.textContent = '行动已经完成。可以选择记录此刻的压力感受。';
     scrollMessages(true);
@@ -497,10 +599,10 @@ function enterSafetyMode(data) {
 
 function restoreProgress() {
     persistEnabled = readStorage(PROGRESS_CONSENT_KEY) === 'true';
-    metricsEnabled = readStorage(METRICS_CONSENT_KEY) === 'true';
+    metricsEnabled = readSession(METRICS_CONSENT_KEY) === 'true';
     progressConsent.checked = persistEnabled;
-    metricsConsent.checked = metricsEnabled;
-    outcomeId = metricsEnabled ? (readStorage(OUTCOME_ID_KEY) || '') : '';
+    outcomeId = metricsEnabled ? (readSession(OUTCOME_ID_KEY) || '') : '';
+    syncMetricsControls();
     if (!persistEnabled) return;
     const raw = readStorage(PROGRESS_KEY);
     if (!raw) return;
@@ -657,16 +759,7 @@ progressConsent?.addEventListener('change', () => {
 });
 
 metricsConsent?.addEventListener('change', () => {
-    metricsEnabled = metricsConsent.checked;
-    writeStorage(METRICS_CONSENT_KEY, String(metricsEnabled));
-    if (metricsEnabled) {
-        recordOutcome();
-    } else if (outcomeId || readStorage(OUTCOME_ID_KEY)) {
-        outcomeId = outcomeId || readStorage(OUTCOME_ID_KEY);
-        recordOutcome({ withdrawn: true });
-    } else {
-        setPrivacyStatus('未启用匿名效果数据。');
-    }
+    setMetricsEnabled(metricsConsent.checked);
 });
 
 clearLocalProgress?.addEventListener('click', () => {
@@ -766,6 +859,87 @@ characterGreeting.addEventListener('click', () => {
     }, 1700);
 });
 
+let waitingTimers = [];
+
+function setWaitingCopy(thinking, text) {
+    if (!thinking?.classList.contains('pending')) return;
+    thinking.querySelector('.bubble').textContent = text;
+    draftStatus.textContent = text.replace(/[。…]+$/, '');
+    chatStatus.textContent = '正在回应';
+}
+
+function startWaitingProgress(thinking) {
+    waitingTimers.forEach((timer) => window.clearTimeout(timer));
+    const stages = [
+        [0, '正在理解你此刻最在意的部分…'],
+        [1800, '正在回看刚才对话里的重点…'],
+        [4500, '正在整理一个更合适的回应…'],
+        [8500, '这次需要多一点时间，我还在这里…'],
+    ];
+    waitingTimers = stages.map(([delay, text]) => window.setTimeout(() => {
+        setWaitingCopy(thinking, text);
+    }, delay));
+}
+
+function stopWaitingProgress() {
+    waitingTimers.forEach((timer) => window.clearTimeout(timer));
+    waitingTimers = [];
+}
+
+async function readChatResponse(response, thinking) {
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('application/x-ndjson') || !response.body?.getReader) {
+        return { data: await response.json(), streamed: false };
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    const bubble = thinking.querySelector('.bubble');
+    let buffer = '';
+    let data = {};
+    let streamed = false;
+
+    function handleEvent(event) {
+        if (!event || typeof event.type !== 'string') return;
+        if (event.type === 'meta') {
+            data = { ...data, ...event };
+        } else if (event.type === 'status' && typeof event.text === 'string') {
+            setWaitingCopy(thinking, `${event.text}…`);
+        } else if (event.type === 'delta' && typeof event.text === 'string' && event.text) {
+            if (!streamed) {
+                streamed = true;
+                stopWaitingProgress();
+                bubble.textContent = '';
+                thinking.classList.remove('pending');
+                revealing = true;
+                updateCompanion();
+            }
+            bubble.append(document.createTextNode(event.text));
+            if (event.provider) {
+                thinking.dataset.provider = event.provider;
+                chatStatus.textContent = providerLabels[event.provider] || '正在回应';
+            }
+            scrollMessages();
+        } else if (event.type === 'done') {
+            data = { ...data, ...event };
+        }
+    }
+
+    while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        lines.forEach((line) => {
+            if (!line.trim()) return;
+            handleEvent(JSON.parse(line));
+        });
+        if (done) break;
+    }
+    if (buffer.trim()) handleEvent(JSON.parse(buffer));
+    return { data, streamed };
+}
+
 form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const text = input.value.trim();
@@ -787,9 +961,10 @@ form.addEventListener('submit', async (event) => {
     appendMessage('user', text);
     input.value = '';
     resizeInput();
-    const thinking = appendMessage('assistant', '我在听，请给我一点时间……');
+    const thinking = appendMessage('assistant', '正在理解你此刻最在意的部分…');
     thinking.classList.add('pending');
     thinking.setAttribute('aria-busy', 'true');
+    startWaitingProgress(thinking);
     updateCompanion();
 
     const controller = new AbortController();
@@ -809,18 +984,20 @@ form.addEventListener('submit', async (event) => {
             risk_state: riskState,
             conversation_intent: requestedIntent,
             history: JSON.stringify(recentHistory),
+            stream: 'true',
         });
         const response = await fetch('/api/chat/', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'X-CSRFToken': csrf,
+                'Accept': 'application/x-ndjson',
             },
             body,
             signal: controller.signal,
         });
         if (!response.ok) throw new Error('Chat request failed');
-        const data = await response.json();
+        const { data, streamed } = await readChatResponse(response, thinking);
         if (typeof data.reply !== 'string' || !data.reply.trim()) {
             throw new Error('Empty chat response');
         }
@@ -839,7 +1016,12 @@ form.addEventListener('submit', async (event) => {
         revealing = true;
         updateCompanion();
         if (voiceEnabled && !supportMode) speakReply(data.reply);
-        await revealReply(thinking.querySelector('.bubble'), data.reply, supportMode);
+        if (streamed) {
+            thinking.querySelector('.bubble').textContent = data.reply;
+            scrollMessages();
+        } else {
+            await revealReply(thinking.querySelector('.bubble'), data.reply, supportMode);
+        }
         conversationHistory.push({ role: 'assistant', content: data.reply });
         if (supportMode) {
             enterSafetyMode(data);
@@ -877,6 +1059,7 @@ form.addEventListener('submit', async (event) => {
         }
     } finally {
         window.clearTimeout(timeout);
+        stopWaitingProgress();
         pending = false;
         revealing = false;
         sendButton.disabled = conversationEnded;

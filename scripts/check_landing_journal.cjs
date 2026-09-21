@@ -23,6 +23,14 @@ async function noHorizontalOverflow(page, label) {
         const errors = [];
         page.on('pageerror', (error) => errors.push(error.message));
 
+        await page.route('**/landing-room.jpg', (route) => route.abort());
+        await page.goto(landingURL, { waitUntil: 'domcontentloaded' });
+        await page.locator('.hero-content').waitFor({ state: 'visible' });
+        assert.equal(await page.locator('.hero-content').evaluate((element) => getComputedStyle(element).opacity), '1');
+        assert.equal(await page.locator('.button-primary').isVisible(), true);
+        await page.screenshot({ path: path.join(output, 'landing-without-background.png') });
+        await page.unroute('**/landing-room.jpg');
+
         await page.goto(landingURL);
         await page.locator('h1').waitFor();
         await page.waitForTimeout(1000);
@@ -81,7 +89,8 @@ async function noHorizontalOverflow(page, label) {
         await page.goto(chatURL);
         await page.locator('.chat-site-nav').waitFor();
         assert.equal(await page.locator('.chat-site-nav a').count(), 2);
-        assert.equal(await page.locator('.chat-nav-copy').first().isVisible(), true);
+        assert.equal(await page.locator('.chat-nav-copy').last().isVisible(), true);
+        assert.equal(await page.locator('.chat-site-nav a').first().getAttribute('aria-label'), '返回首页');
         await page.locator('.chat-site-nav a').first().hover();
         await page.waitForTimeout(220);
         assert.notEqual(await page.locator('.chat-site-nav a').first().evaluate((element) => getComputedStyle(element).transform), 'none');

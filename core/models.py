@@ -19,6 +19,11 @@ class OutcomeRecord(models.Model):
     initial_stress = models.PositiveSmallIntegerField(null=True, blank=True)
     final_stress = models.PositiveSmallIntegerField(null=True, blank=True)
     action_completed = models.BooleanField(default=False)
+    understood_rating = models.PositiveSmallIntegerField(null=True, blank=True)
+    actionable_rating = models.PositiveSmallIntegerField(null=True, blank=True)
+    helpful_rating = models.PositiveSmallIntegerField(null=True, blank=True)
+    return_intent_rating = models.PositiveSmallIntegerField(null=True, blank=True)
+    feedback_note = models.CharField(max_length=300, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

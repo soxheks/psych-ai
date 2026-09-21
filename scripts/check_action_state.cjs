@@ -1,9 +1,12 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { chromium } = require('playwright');
 
 const baseURL = process.env.PREVIEW_URL || 'http://127.0.0.1:8000';
 const chatURL = new URL('/chat/', baseURL).toString();
 const selectedAction = '打开任务清单，只圈出截止最近且最重要的一项，写下它的第一个动作。';
+const screenshotDir = process.env.SCREENSHOT_DIR;
 
 (async () => {
     const browser = await chromium.launch({ channel: 'msedge', headless: true });
@@ -11,6 +14,7 @@ const selectedAction = '打开任务清单，只圈出截止最近且最重要�
         const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
         const page = await context.newPage();
         const requests = [];
+        const outcomeRequests = [];
         const errors = [];
         page.on('pageerror', (error) => errors.push(error.message));
 
@@ -18,7 +22,7 @@ const selectedAction = '打开任务清单，只圈出截止最近且最重要�
             const body = new URLSearchParams(route.request().postData() || '');
             requests.push(Object.fromEntries(body));
             if (requests.length === 1) {
-                await route.fulfill({ json: {
+                const final = {
                     reply: '我们先从今天能控制的一小步开始。',
                     provider: 'doubao',
                     stage: 'control',
@@ -30,7 +34,19 @@ const selectedAction = '打开任务清单，只圈出截止最近且最重要�
                         duration: '约 10 分钟',
                         note: '不求一次做好。',
                     },
-                } });
+                };
+                await new Promise((resolve) => setTimeout(resolve, 2100));
+                await route.fulfill({
+                    status: 200,
+                    contentType: 'application/x-ndjson; charset=utf-8',
+                    body: [
+                        { type: 'meta', stage: 'control', action_status: '', action_card: final.action_card },
+                        { type: 'status', text: '正在寻找一个更轻、更可控的步骤' },
+                        { type: 'delta', text: '我们先从今天能控制的', provider: 'doubao' },
+                        { type: 'delta', text: '一小步开始。', provider: 'doubao' },
+                        { type: 'done', ...final },
+                    ].map((event) => JSON.stringify(event)).join('\n') + '\n',
+                });
                 return;
             }
             await route.fulfill({ json: {
@@ -43,13 +59,24 @@ const selectedAction = '打开任务清单，只圈出截止最近且最重要�
                 action_card: null,
             } });
         });
+        await page.route('**/api/outcomes/', async (route) => {
+            const body = new URLSearchParams(route.request().postData() || '');
+            outcomeRequests.push(Object.fromEntries(body));
+            await route.fulfill({ json: body.get('consent') === 'withdrawn'
+                ? { deleted: true }
+                : { saved: true, created: outcomeRequests.length === 1 } });
+        });
 
         await page.goto(chatURL);
         await page.locator('#initialStressScale [data-stress="5"]').click();
         assert.match(await page.locator('#initialStressFeedback').textContent(), /压力 5 分/);
         await page.locator('#messageInput').fill('我想先处理竞赛任务。');
         await page.locator('#sendButton').click();
+        await page.waitForTimeout(1900);
+        assert.match(await page.locator('.message.assistant.pending .bubble').textContent(), /回看刚才对话里的重点/);
         await page.locator('.action-card').waitFor({ state: 'visible' });
+        assert.equal(requests[0].stream, 'true');
+        assert.match(await page.locator('.message.assistant:not(.pending) .bubble').last().textContent(), /一小步开始/);
         await page.locator('.action-accept').click();
         await page.locator('.action-complete').click();
         await page.waitForFunction(() => !document.querySelector('#sendButton').disabled);
@@ -65,6 +92,43 @@ const selectedAction = '打开任务清单，只圈出截止最近且最重要�
         assert.match(await page.locator('.completion-result strong').textContent(), /轻了 3 分/);
         assert.equal(await page.locator('.stress-before em').textContent(), '5 分');
         assert.equal(await page.locator('.stress-after em').textContent(), '2 分');
+        assert.equal(outcomeRequests.length, 0, 'anonymous data must not be sent before consent');
+
+        await page.locator('[data-feedback-field="understood_rating"] [data-rating="5"]').click();
+        await page.locator('[data-feedback-field="actionable_rating"] [data-rating="4"]').click();
+        await page.locator('[data-feedback-field="helpful_rating"] [data-rating="5"]').click();
+        await page.locator('[data-feedback-field="return_intent_rating"] [data-rating="4"]').click();
+        await page.locator('.completion-feedback-note textarea').fill('希望增加更多竞赛场景。');
+        assert.equal(outcomeRequests.length, 0, 'ratings must remain local until consent');
+
+        const consent = page.locator('.completion-metrics-consent');
+        assert.equal(await consent.isChecked(), false);
+        await consent.check();
+        await page.waitForFunction(() => document.querySelector('.completion-consent-status')?.textContent.includes('已匿名'));
+        assert.equal(outcomeRequests.length, 1);
+        assert.equal(outcomeRequests[0].initial_stress, '5');
+        assert.equal(outcomeRequests[0].final_stress, '2');
+        assert.equal(outcomeRequests[0].action_completed, 'true');
+        assert.equal(outcomeRequests[0].understood_rating, '5');
+        assert.equal(outcomeRequests[0].actionable_rating, '4');
+        assert.equal(outcomeRequests[0].helpful_rating, '5');
+        assert.equal(outcomeRequests[0].return_intent_rating, '4');
+        assert.equal(outcomeRequests[0].feedback_note, '希望增加更多竞赛场景。');
+
+        await consent.uncheck();
+        await page.waitForFunction(() => document.querySelector('.completion-consent-status')?.textContent.includes('已删除'));
+        assert.equal(outcomeRequests.at(-1).consent, 'withdrawn');
+
+        if (screenshotDir) {
+            fs.mkdirSync(screenshotDir, { recursive: true });
+            await page.locator('.completion-summary').scrollIntoViewIfNeeded();
+            assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true);
+            await page.screenshot({ path: path.join(screenshotDir, 'outcome-desktop.png') });
+            await page.setViewportSize({ width: 390, height: 844 });
+            await page.locator('.completion-summary').scrollIntoViewIfNeeded();
+            assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), true);
+            await page.screenshot({ path: path.join(screenshotDir, 'outcome-mobile.png') });
+        }
 
         await page.locator('#messageInput').fill('有');
         await page.locator('#sendButton').click();
@@ -74,7 +138,7 @@ const selectedAction = '打开任务清单，只圈出截止最近且最重要�
         assert.equal(requests[2].action_status, 'completed');
         assert.equal(requests[2].flow_stage, 'action');
         assert.deepEqual(errors, []);
-        console.log('PASS: selected action and completed status persist through the completion reply and the next user turn.');
+        console.log('PASS: action state, completion feedback, explicit consent, structured outcome data and withdrawal all work.');
     } finally {
         await browser.close();
     }

@@ -1,0 +1,43 @@
+{% extends "admin/change_list.html" %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+    .outcome-dashboard { margin: 0 0 18px; padding: 18px; border: 1px solid #d8e5dd; background: #f7fbf8; }
+    .outcome-dashboard h2 { margin: 0 0 6px; color: #315746; font-size: 18px; }
+    .outcome-dashboard > p { margin: 0 0 14px; color: #718279; }
+    .outcome-dashboard-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid #d4e1d9; border-bottom: 1px solid #d4e1d9; }
+    .outcome-dashboard-grid section { min-width: 0; padding: 14px; }
+    .outcome-dashboard-grid section + section { border-left: 1px solid #d4e1d9; }
+    .outcome-dashboard-grid span, .outcome-dashboard-grid small { display: block; color: #74867c; }
+    .outcome-dashboard-grid strong { display: block; margin: 6px 0; color: #2f6550; font-size: 25px; }
+    .outcome-rating-line { margin-top: 13px !important; font-size: 12px; }
+    @media (max-width: 900px) {
+        .outcome-dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .outcome-dashboard-grid section:nth-child(3) { border-left: 0; }
+        .outcome-dashboard-grid section:nth-child(n+3) { border-top: 1px solid #d4e1d9; }
+    }
+</style>
+{% endblock %}
+
+{% block object-tools-items %}
+<li><a href="{% url 'admin:core_outcomerecord_export' %}{% if request.GET %}?{{ request.GET.urlencode }}{% endif %}" class="addlink">导出当前筛选 CSV</a></li>
+{{ block.super }}
+{% endblock %}
+
+{% block content %}
+{% if outcome_dashboard %}
+<section class="outcome-dashboard" aria-label="匿名效果统计摘要">
+    <h2>匿名效果统计</h2>
+    <p>摘要与下方筛选条件同步，仅用于真实匿名记录，不包含对话原文。</p>
+    <div class="outcome-dashboard-grid">
+        <section><span>筛选记录</span><strong>{{ outcome_dashboard.total }}</strong><small>份</small></section>
+        <section><span>完成小行动</span><strong>{{ outcome_dashboard.completed }}</strong><small>{% if outcome_dashboard.action_rate != None %}{{ outcome_dashboard.action_rate }}%{% else %}暂无样本{% endif %}</small></section>
+        <section><span>压力有所缓解</span><strong>{{ outcome_dashboard.improved }}</strong><small>{% if outcome_dashboard.improvement_rate != None %}前后测中 {{ outcome_dashboard.improvement_rate }}%{% else %}暂无前后测{% endif %}</small></section>
+        <section><span>有效前后测</span><strong>{{ outcome_dashboard.paired }}</strong><small>份</small></section>
+    </div>
+    <p class="outcome-rating-line">平均评分：被理解 {{ outcome_dashboard.averages.understood|default:"--" }} · 建议可执行 {{ outcome_dashboard.averages.actionable|default:"--" }} · 帮助程度 {{ outcome_dashboard.averages.helpful|default:"--" }} · 再次使用意愿 {{ outcome_dashboard.averages.return_intent|default:"--" }}</p>
+</section>
+{% endif %}
+{{ block.super }}
+{% endblock %}

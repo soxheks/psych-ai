@@ -103,6 +103,48 @@ def generate_ai_reply(message, scenario, history=None, phase='clarify', selected
     raise AIUnavailable('No configured AI provider is available.')
 
 
+def stream_ai_reply(message, scenario, history=None, phase='clarify', selected_action='', action_status=''):
+    """Yield provider text as it arrives, falling back to non-stream providers when needed."""
+    provider = settings.AI_PROVIDER.lower()
+
+    if provider in ('auto', 'doubao', 'ark') and settings.ARK_API_KEY:
+        yielded = False
+        try:
+            for chunk in call_doubao_stream(
+                message, scenario, history, phase, selected_action, action_status,
+            ):
+                yielded = True
+                yield chunk, 'doubao'
+            if not yielded:
+                raise AIUnavailable('Doubao returned an empty stream.')
+            return
+        except AIUnavailable:
+            if yielded or provider in ('doubao', 'ark'):
+                raise
+
+    if provider in ('auto', 'gemini') and settings.GEMINI_API_KEY:
+        try:
+            yield call_gemini(
+                message, scenario, history, phase, selected_action, action_status,
+            ), 'gemini'
+            return
+        except AIUnavailable:
+            if provider == 'gemini':
+                raise
+
+    if provider in ('auto', 'ollama'):
+        try:
+            yield call_ollama(
+                message, scenario, history, phase, selected_action, action_status,
+            ), 'ollama'
+            return
+        except AIUnavailable:
+            if provider == 'ollama':
+                raise
+
+    raise AIUnavailable('No configured AI provider is available.')
+
+
 def build_user_prompt(message, scenario, history=None, phase='clarify', selected_action='', action_status=''):
     scenario_label = SCENARIO_LABELS.get(scenario, '一般学业压力')
     recent_context = []
@@ -175,6 +217,51 @@ def call_doubao(message, scenario, history=None, phase='clarify', selected_actio
         return data['choices'][0]['message']['content'].strip()
     except (KeyError, IndexError, TypeError) as exc:
         raise AIUnavailable('Doubao returned an unexpected response.') from exc
+
+
+def call_doubao_stream(message, scenario, history=None, phase='clarify', selected_action='', action_status=''):
+    url = settings.ARK_BASE_URL.rstrip('/') + '/chat/completions'
+    payload = {
+        'model': settings.DOUBAO_MODEL,
+        'messages': [
+            {'role': 'system', 'content': SYSTEM_PROMPT},
+            {'role': 'user', 'content': build_user_prompt(message, scenario, history, phase, selected_action, action_status)},
+        ],
+        'temperature': 0.7,
+        'max_tokens': 700,
+        'stream': True,
+    }
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode('utf-8'),
+        headers={
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream',
+            'Authorization': f'Bearer {settings.ARK_API_KEY}',
+        },
+        method='POST',
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=40) as response:
+            for raw_line in response:
+                line = raw_line.decode('utf-8').strip()
+                if not line.startswith('data:'):
+                    continue
+                data_text = line[5:].strip()
+                if not data_text or data_text == '[DONE]':
+                    if data_text == '[DONE]':
+                        break
+                    continue
+                data = json.loads(data_text)
+                choices = data.get('choices') or []
+                if not choices:
+                    continue
+                content = (choices[0].get('delta') or {}).get('content')
+                if isinstance(content, str) and content:
+                    yield content
+    except (urllib.error.URLError, TimeoutError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise AIUnavailable(str(exc)) from exc
 
 
 def call_ollama(message, scenario, history=None, phase='clarify', selected_action='', action_status=''):

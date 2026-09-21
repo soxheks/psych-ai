@@ -3,14 +3,14 @@ import re
 import uuid
 
 from django.db.models import Avg, F
-from django.http import JsonResponse
+from django.http import JsonResponse, StreamingHttpResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import render
 from django.views.decorators.cache import cache_control, never_cache
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 
-from .ai_client import AIUnavailable, generate_ai_reply
+from .ai_client import AIUnavailable, generate_ai_reply, stream_ai_reply
 from .models import OutcomeRecord
 
 
@@ -158,20 +158,30 @@ def chat(request):
     risk_state = requested_risk_state if requested_risk_state in RISK_STATES else ''
     requested_intent = request.POST.get('conversation_intent', '').strip()
     conversation_intent = requested_intent if requested_intent in CONVERSATION_INTENTS else ''
+    wants_stream = request.POST.get('stream') == 'true'
 
     if not message:
-        return JsonResponse({'reply': '我在这里。你可以先用一句话说说：最近最压着你的那件学业相关的事是什么？'})
+        data = {'reply': '我在这里。你可以先用一句话说说：最近最压着你的那件学业相关的事是什么？'}
+        return stream_static_response(data) if wants_stream else JsonResponse(data)
 
     if any(word in message for word in RISK_WORDS):
-        return JsonResponse(build_safety_response('initial'))
+        data = build_safety_response('initial')
+        return stream_static_response(data) if wants_stream else JsonResponse(data)
 
     if risk_state:
-        return JsonResponse(build_safety_response('followup', message, conversation_intent))
+        data = build_safety_response('followup', message, conversation_intent)
+        return stream_static_response(data) if wants_stream else JsonResponse(data)
 
     if conversation_intent:
-        return JsonResponse(build_intent_response(conversation_intent, flow_stage, action_status))
+        data = build_intent_response(conversation_intent, flow_stage, action_status)
+        return stream_static_response(data) if wants_stream else JsonResponse(data)
 
     phase = next_phase(flow_stage)
+
+    if wants_stream:
+        return stream_model_response(
+            message, scenario, history, phase, selected_action, action_status,
+        )
 
     try:
         reply, provider = generate_ai_reply(
@@ -200,6 +210,80 @@ def chat(request):
     })
 
 
+def stream_event(event_type, **payload):
+    return json.dumps({'type': event_type, **payload}, ensure_ascii=False) + '\n'
+
+
+def configure_stream_response(events):
+    response = StreamingHttpResponse(events, content_type='application/x-ndjson; charset=utf-8')
+    response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response['X-Accel-Buffering'] = 'no'
+    return response
+
+
+def stream_static_response(data):
+    def events():
+        yield stream_event('delta', text=data.get('reply', ''))
+        yield stream_event('done', **data)
+
+    return configure_stream_response(events())
+
+
+def stream_model_response(message, scenario, history, phase, selected_action, action_status):
+    action_card = build_action_card(scenario, selected_action) if phase == 'control' else None
+    status_labels = {
+        'clarify': '正在理解你此刻最在意的部分',
+        'control': '正在寻找一个更轻、更可控的步骤',
+        'action': '正在回看这一步带来的变化',
+    }
+
+    def events():
+        yield stream_event(
+            'meta', stage=phase, action_status=action_status, action_card=action_card,
+        )
+        yield stream_event('status', text=status_labels.get(phase, '正在认真整理回应'))
+        chunks = []
+        provider = 'fallback'
+        try:
+            for chunk, chunk_provider in stream_ai_reply(
+                message,
+                scenario,
+                history=history,
+                phase=phase,
+                selected_action=selected_action,
+                action_status=action_status,
+            ):
+                provider = chunk_provider
+                chunks.append(chunk)
+                yield stream_event('delta', text=chunk, provider=provider)
+        except AIUnavailable:
+            if not chunks:
+                fallback = build_supportive_reply(message, scenario, phase, selected_action, action_status)
+                chunks = [fallback]
+                provider = 'fallback'
+                yield stream_event('delta', text=fallback, provider=provider)
+
+        reply = ''.join(chunks).strip()
+        if not reply:
+            reply = build_supportive_reply(message, scenario, phase, selected_action, action_status)
+            provider = 'fallback'
+            yield stream_event('delta', text=reply, provider=provider)
+        reply = enforce_action_state(reply, selected_action, action_status)
+        reply = enforce_conversation_quality(reply, message, history, action_status)
+        reply = anchor_selected_action(reply, phase, selected_action, action_status)
+        reply = normalize_reply_punctuation(reply)
+        yield stream_event(
+            'done',
+            reply=reply,
+            provider=provider,
+            stage=phase,
+            action_status=action_status,
+            action_card=action_card,
+        )
+
+    return configure_stream_response(events())
+
+
 @require_POST
 def record_outcome(request):
     try:
@@ -225,8 +309,12 @@ def record_outcome(request):
     try:
         initial_stress = parse_stress(request.POST.get('initial_stress'))
         final_stress = parse_stress(request.POST.get('final_stress'))
+        understood_rating = parse_stress(request.POST.get('understood_rating'))
+        actionable_rating = parse_stress(request.POST.get('actionable_rating'))
+        helpful_rating = parse_stress(request.POST.get('helpful_rating'))
+        return_intent_rating = parse_stress(request.POST.get('return_intent_rating'))
     except ValueError:
-        return JsonResponse({'error': 'invalid_stress'}, status=400)
+        return JsonResponse({'error': 'invalid_rating'}, status=400)
 
     record, created = OutcomeRecord.objects.get_or_create(
         event_id=event_id,
@@ -237,6 +325,16 @@ def record_outcome(request):
         record.initial_stress = initial_stress
     if final_stress is not None:
         record.final_stress = final_stress
+    if understood_rating is not None:
+        record.understood_rating = understood_rating
+    if actionable_rating is not None:
+        record.actionable_rating = actionable_rating
+    if helpful_rating is not None:
+        record.helpful_rating = helpful_rating
+    if return_intent_rating is not None:
+        record.return_intent_rating = return_intent_rating
+    if 'feedback_note' in request.POST:
+        record.feedback_note = request.POST.get('feedback_note', '').strip()[:300]
     if request.POST.get('action_completed') == 'true':
         record.action_completed = True
     record.save()
