@@ -237,7 +237,7 @@
                 </section>
                 <section class="safety-section">
                     <span aria-hidden="true">03</span>
-                    <div><h3>你的信息如何使用</h3><p>为生成回复，你发送的文字和最近几轮对话会交给网站配置的 AI 服务。请避免填写真实姓名、学号、联系方式、住址、账号密码等敏感信息。对话进度与匿名效果数据默认都不保存；只有你在“数据与进度设置”或完成小结中主动开启后才会保存，并可随时关闭或删除。</p></div>
+                    <div><h3>你的信息如何使用</h3><p>为生成回复，你发送的文字和最近几轮对话会交给网站配置的 AI 服务，同时携带本次对话中有限的困扰要点、已问问题和回应摘录。要点默认仅保留在当前页面，刷新后清除；主动开启本地进度后才会随进度保存在这台设备。请避免填写真实姓名、学号、联系方式、住址、账号密码等敏感信息。对话进度与匿名效果数据默认都不保存；只有你在“数据与进度设置”或完成小结中主动开启后才会保存，并可随时关闭或删除。</p></div>
                 </section>
                 <section class="safety-section safety-section-urgent">
                     <span aria-hidden="true">04</span>
@@ -364,6 +364,6 @@
         </section>
     </template>
     {% include 'core/_page_transition.html' %}
-    <script src="{% static 'core/js/home.js' %}?v=guided-flow-13"></script>
+    <script src="{% static 'core/js/home.js' %}?v=guided-flow-14"></script>
 </body>
 </html>

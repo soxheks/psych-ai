@@ -165,6 +165,22 @@ const experienceRatings = {
     return_intent_rating: null,
 };
 const conversationHistory = [];
+let conversationMemory = {};
+
+function cleanMemory(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    const text = (item, limit = 180) => typeof item === 'string' ? item.trim().slice(0, limit) : '';
+    const list = (items, count) => Array.isArray(items) ? items.slice(-count).map((item) => text(item)).filter(Boolean) : [];
+    return {
+        concern: text(value.concern, 240),
+        facts: list(value.facts, 8),
+        questions: list(value.questions, 12),
+        answered: Array.isArray(value.answered) ? value.answered.slice(-6).filter((item) => item && typeof item === 'object').map((item) => ({
+            question: text(item.question), answer: text(item.answer),
+        })).filter((item) => item.question && item.answer) : [],
+        preference: ['listen', 'clarify', 'action'].includes(value.preference) ? value.preference : '',
+    };
+}
 
 const stageLabels = {
     listen: '先听你说',
@@ -215,6 +231,7 @@ function saveProgress() {
         initialStress,
         finalStress,
         history,
+        memory: cleanMemory(conversationMemory),
         savedAt: new Date().toISOString(),
     }));
     if (clearLocalProgress) clearLocalProgress.hidden = !saved;
@@ -580,6 +597,8 @@ function enterSafetyMode(data) {
     riskState = data.risk_state || 'active';
     selectedAction = '';
     actionStatus = '';
+    conversationMemory = {};
+    conversationHistory.length = 0;
     completionSummaryRendered = false;
     chatPanel?.classList.add('is-safety');
     dialogueStageLabel.textContent = '先确保此刻安全';
@@ -624,6 +643,7 @@ function restoreProgress() {
     flowStage = stageOrder.includes(saved.flowStage) ? saved.flowStage : 'listen';
     selectedAction = typeof saved.selectedAction === 'string' ? saved.selectedAction.slice(0, 500) : '';
     actionStatus = validStatuses.has(saved.actionStatus) ? saved.actionStatus : '';
+    conversationMemory = cleanMemory(saved.memory);
     initialStress = [1, 2, 3, 4, 5].includes(saved.initialStress) ? saved.initialStress : null;
     finalStress = [1, 2, 3, 4, 5].includes(saved.finalStress) ? saved.finalStress : null;
     scenarios.forEach((button) => {
@@ -898,6 +918,7 @@ async function readChatResponse(response, thinking) {
     let buffer = '';
     let data = {};
     let streamed = false;
+    let completed = false;
 
     function handleEvent(event) {
         if (!event || typeof event.type !== 'string') return;
@@ -915,6 +936,7 @@ async function readChatResponse(response, thinking) {
                 updateCompanion();
             }
             bubble.append(document.createTextNode(event.text));
+            thinking.dataset.hasStreamText = 'true';
             if (event.provider) {
                 thinking.dataset.provider = event.provider;
                 chatStatus.textContent = providerLabels[event.provider] || '正在回应';
@@ -922,6 +944,7 @@ async function readChatResponse(response, thinking) {
             scrollMessages();
         } else if (event.type === 'done') {
             data = { ...data, ...event };
+            completed = true;
         }
     }
 
@@ -937,6 +960,8 @@ async function readChatResponse(response, thinking) {
         if (done) break;
     }
     if (buffer.trim()) handleEvent(JSON.parse(buffer));
+    if (!completed) throw new Error('Interrupted chat stream');
+    if (streamed && data.reply !== bubble.textContent) throw new Error('Inconsistent chat stream');
     return { data, streamed };
 }
 
@@ -984,6 +1009,7 @@ form.addEventListener('submit', async (event) => {
             risk_state: riskState,
             conversation_intent: requestedIntent,
             history: JSON.stringify(recentHistory),
+            memory: JSON.stringify(conversationMemory),
             stream: 'true',
         });
         const response = await fetch('/api/chat/', {
@@ -1007,6 +1033,7 @@ form.addEventListener('submit', async (event) => {
         supportMode = Boolean(data.risk);
         thinking.classList.toggle('risk', supportMode);
         lastReply = data.reply;
+        if (data.memory) conversationMemory = cleanMemory(data.memory);
         if (typeof data.action_status === 'string') actionStatus = data.action_status;
         if (!supportMode) {
             riskState = '';
@@ -1015,9 +1042,8 @@ form.addEventListener('submit', async (event) => {
         }
         revealing = true;
         updateCompanion();
-        if (voiceEnabled && !supportMode) speakReply(data.reply);
+        if (voiceEnabled && !supportMode && !data.interrupted) speakReply(data.reply);
         if (streamed) {
-            thinking.querySelector('.bubble').textContent = data.reply;
             scrollMessages();
         } else {
             await revealReply(thinking.querySelector('.bubble'), data.reply, supportMode);
@@ -1042,6 +1068,14 @@ form.addEventListener('submit', async (event) => {
             : (providerLabels[data.provider] || '在这里陪你');
         chatStatus.dataset.provider = supportMode ? 'safety' : (data.provider || 'unknown');
         announcement.textContent = data.reply;
+        if (data.interrupted) {
+            chatStatus.textContent = '回复暂时中断';
+            voiceNotice.textContent = '已保留收到的内容，回复还没有结束，可以稍后再试。';
+            if (!input.value.trim()) {
+                input.value = text;
+                resizeInput();
+            }
+        }
     } catch (error) {
         pendingIntent = requestedIntent;
         if (conversationHistory.at(-1)?.role === 'user' && conversationHistory.at(-1)?.content === text) {
@@ -1050,7 +1084,11 @@ form.addEventListener('submit', async (event) => {
         const notice = error.name === 'AbortError'
             ? '这次回应等得有些久。你的话已经保留，可以稍后再试一次。'
             : '暂时没有收到回应。你的话已经保留，可以稍后再试一次。';
-        thinking.querySelector('.bubble').textContent = notice;
+        if (thinking.dataset.hasStreamText === 'true') {
+            voiceNotice.textContent = '回复中途断开，已保留收到的内容。你的话也已保留，可以稍后再试。';
+        } else {
+            thinking.querySelector('.bubble').textContent = notice;
+        }
         chatStatus.textContent = '连接暂时中断';
         announcement.textContent = notice;
         if (!input.value.trim()) {
@@ -1059,6 +1097,7 @@ form.addEventListener('submit', async (event) => {
         }
     } finally {
         window.clearTimeout(timeout);
+        controller.abort();
         stopWaitingProgress();
         pending = false;
         revealing = false;
