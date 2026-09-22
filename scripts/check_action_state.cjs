@@ -68,12 +68,15 @@ const screenshotDir = process.env.SCREENSHOT_DIR;
         });
 
         await page.goto(chatURL);
+        assert.equal(await page.locator('#initialStressCheckin').isVisible(), false);
+        await page.locator('.scenario.active').click();
+        assert.equal(await page.locator('#initialStressCheckin').isVisible(), true);
         await page.locator('#initialStressScale [data-stress="5"]').click();
         assert.match(await page.locator('#initialStressFeedback').textContent(), /压力 5 分/);
         await page.locator('#messageInput').fill('我想先处理竞赛任务。');
         await page.locator('#sendButton').click();
         await page.waitForTimeout(1900);
-        assert.match(await page.locator('.message.assistant.pending .bubble').textContent(), /回看刚才对话里的重点/);
+        assert.match(await page.locator('.message.assistant.pending .bubble').textContent(), /已经连接/);
         await page.locator('.action-card').waitFor({ state: 'visible' });
         assert.equal(requests[0].stream, 'true');
         assert.match(await page.locator('.message.assistant:not(.pending) .bubble').last().textContent(), /一小步开始/);
@@ -94,6 +97,7 @@ const screenshotDir = process.env.SCREENSHOT_DIR;
         assert.equal(await page.locator('.stress-after em').textContent(), '2 分');
         assert.equal(outcomeRequests.length, 0, 'anonymous data must not be sent before consent');
 
+        await page.locator('.completion-more summary').click();
         await page.locator('[data-feedback-field="understood_rating"] [data-rating="5"]').click();
         await page.locator('[data-feedback-field="actionable_rating"] [data-rating="4"]').click();
         await page.locator('[data-feedback-field="helpful_rating"] [data-rating="5"]').click();

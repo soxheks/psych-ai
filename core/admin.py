@@ -71,6 +71,10 @@ class OutcomeRecordAdmin(admin.ModelAdmin):
             'completed': completed,
             'action_rate': round(completed / total * 100) if total else None,
             'paired': paired_count,
+            'missing_initial': queryset.filter(initial_stress__isnull=True).count(),
+            'missing_final': queryset.filter(final_stress__isnull=True).count(),
+            'unchanged': paired.filter(final_stress=F('initial_stress')).count(),
+            'increased': paired.filter(final_stress__gt=F('initial_stress')).count(),
             'improved': improved,
             'improvement_rate': round(improved / paired_count * 100) if paired_count else None,
             'averages': {
@@ -90,7 +94,7 @@ class OutcomeRecordAdmin(admin.ModelAdmin):
         writer = csv.writer(response)
         writer.writerow([
             '记录时间', '匿名事件ID', '场景', '开始压力', '结束压力', '行动完成',
-            '被理解评分', '建议可执行评分', '帮助程度评分', '再次使用意愿评分', '匿名建议',
+            '被理解评分', '建议可执行评分', '帮助程度评分', '再次使用意愿评分', '匿名建议', '完整前后测', '压力变化(开始减结束)',
         ])
         for record in queryset.iterator():
             writer.writerow([
@@ -105,6 +109,8 @@ class OutcomeRecordAdmin(admin.ModelAdmin):
                 record.helpful_rating or '',
                 record.return_intent_rating or '',
                 self.csv_safe(record.feedback_note),
+                '是' if record.initial_stress is not None and record.final_stress is not None else '否',
+                record.initial_stress - record.final_stress if record.initial_stress is not None and record.final_stress is not None else '',
             ])
         return response
 

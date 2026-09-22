@@ -8,7 +8,7 @@
     <title>心研同伴 | 留一点时间给自己</title>
     <link rel="preload" as="image" href="{% static 'core/images/companion-poses.png' %}">
     <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=4">
-    <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=guided-flow-8">
+    <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=guided-flow-11">
     <script defer src="{% static 'core/js/sound-effects.js' %}?v=3"></script>
     <script defer src="{% static 'core/js/page-transition.js' %}?v=4"></script>
 </head>
@@ -130,7 +130,8 @@
                                     <img src="{% static 'core/icons/message-circle-heart.svg' %}" alt="" width="20" height="20"><span>想找人聊聊</span>
                                 </button>
                             </div>
-                            <div id="initialStressCheckin" class="stress-checkin">
+                            <div id="initialStressCheckin" class="stress-checkin is-deferred" aria-hidden="true">
+                                {% if trial_mode %}<p class="trial-intro">一次自愿的体验记录：开始和结束时各感受一次压力。是否匿名贡献，最后由你决定。</p>{% endif %}
                                 <div class="stress-checkin-copy">
                                     <strong>此刻的压力大约有几分？</strong>
                                     <span>可选，是否保存由你决定</span>
@@ -144,6 +145,7 @@
                                 </div>
                                 <div class="stress-scale-legend" aria-hidden="true"><span>很轻</span><span>很重</span></div>
                                 <p id="initialStressFeedback" class="stress-feedback" role="status"></p>
+                                <button type="button" id="skipInitialStress" class="checkin-skip" hidden>跳过评分，直接开始</button>
                             </div>
                         </section>
                         <article class="message assistant">
@@ -174,7 +176,7 @@
                     </aside>
                 </div>
 
-                <form id="chatForm" class="composer">
+                <form id="chatForm" class="composer" data-trial="{{ trial_mode|yesno:'true,false' }}">
                     <div class="composer-heading">
                         <label for="messageInput">这一刻，我想说……</label>
                         <span id="draftStatus" aria-hidden="true">慢慢来，我在听</span>
@@ -197,7 +199,7 @@
                         <div class="data-settings-body">
                             <label class="data-choice" for="progressConsent">
                                 <input id="progressConsent" type="checkbox">
-                                <span><strong>在此设备保存本次进度</strong><small>保存最近 6 段对话、当前阶段与行动；共用设备请勿开启。</small></span>
+                                <span><strong>在此设备保存本次进度</strong><small>保存最近 6 段对话、有限会话要点、当前阶段与行动；共用设备请勿开启。</small></span>
                             </label>
                             <label class="data-choice" for="metricsConsent">
                                 <input id="metricsConsent" type="checkbox">
@@ -318,8 +320,17 @@
                 <p></p>
             </div>
             <div class="completion-feedback">
+                <div class="experience-rating" data-feedback-field="helpful_rating">
+                    <span>这次陪伴对你有帮助吗？</span>
+                    <div role="group" aria-label="本次陪伴有帮助，1到5分">
+                        <button type="button" data-rating="1" aria-pressed="false">1</button><button type="button" data-rating="2" aria-pressed="false">2</button><button type="button" data-rating="3" aria-pressed="false">3</button><button type="button" data-rating="4" aria-pressed="false">4</button><button type="button" data-rating="5" aria-pressed="false">5</button>
+                    </div>
+                </div>
+                <p class="feedback-legend">可选 · 1 分：没有帮助，5 分：很有帮助</p>
+                <details class="completion-more">
+                    <summary>愿意再告诉我们一点吗？</summary>
                 <div class="completion-feedback-heading">
-                    <strong>这次陪伴体验怎么样？</strong>
+                    <strong>再留一点感受</strong>
                     <small>可选，1 分表示不符合，5 分表示非常符合</small>
                 </div>
                 <div class="experience-rating-list">
@@ -335,12 +346,6 @@
                             <button type="button" data-rating="1" aria-pressed="false">1</button><button type="button" data-rating="2" aria-pressed="false">2</button><button type="button" data-rating="3" aria-pressed="false">3</button><button type="button" data-rating="4" aria-pressed="false">4</button><button type="button" data-rating="5" aria-pressed="false">5</button>
                         </div>
                     </div>
-                    <div class="experience-rating" data-feedback-field="helpful_rating">
-                        <span>本次陪伴有帮助</span>
-                        <div role="group" aria-label="本次陪伴有帮助，1到5分">
-                            <button type="button" data-rating="1" aria-pressed="false">1</button><button type="button" data-rating="2" aria-pressed="false">2</button><button type="button" data-rating="3" aria-pressed="false">3</button><button type="button" data-rating="4" aria-pressed="false">4</button><button type="button" data-rating="5" aria-pressed="false">5</button>
-                        </div>
-                    </div>
                     <div class="experience-rating" data-feedback-field="return_intent_rating">
                         <span>我愿意再次使用</span>
                         <div role="group" aria-label="我愿意再次使用，1到5分">
@@ -352,6 +357,7 @@
                     <span>还有什么想告诉我们？</span>
                     <textarea maxlength="300" rows="2" placeholder="可选，请不要填写姓名、学号或联系方式"></textarea>
                 </label>
+                </details>
             </div>
             <div class="completion-consent">
                 <label class="completion-consent-choice">
@@ -364,6 +370,6 @@
         </section>
     </template>
     {% include 'core/_page_transition.html' %}
-    <script src="{% static 'core/js/home.js' %}?v=guided-flow-14"></script>
+    <script src="{% static 'core/js/home.js' %}?v=guided-flow-16"></script>
 </body>
 </html>

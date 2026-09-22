@@ -10,6 +10,28 @@ from .conversation import choose_phase, parse_memory, remember
 
 
 class ConversationPacingTests(SimpleTestCase):
+    def test_latest_explicit_wish_overrides_old_listening_preference(self):
+        old = remember({}, '先别给建议，陪我说说吧。', [])
+        for message in (
+            '主要怕队友觉得我拖后腿。我现在愿意试试一个很小的步骤，帮我选一个吧。',
+            '之前只想聊聊，但是我现在愿意开始了。',
+            '我刚才说“先别给建议”，现在帮我选一个小行动。',
+        ):
+            with self.subTest(message=message):
+                updated = remember(old, message, [])
+                self.assertEqual(updated['preference'], 'action')
+                self.assertEqual(choose_phase(message, memory=updated), 'control')
+        for message in ('我准备好了，但现在不想开始。', '帮我拆一步，不过先别给建议。'):
+            self.assertEqual(choose_phase(message, memory=old), 'listen')
+
+    def test_explicit_end_is_available_without_an_action(self):
+        with patch('core.views.generate_ai_reply') as generate:
+            data = self.client.post(reverse('chat'), {'message': '今天先聊到这里，谢谢。'}).json()
+        self.assertTrue(data['ended'])
+        self.assertEqual(data['action_status'], '')
+        self.assertIsNone(data['action_card'])
+        generate.assert_not_called()
+
     def test_feelings_do_not_automatically_advance_to_action(self):
         with patch('core.views.generate_ai_reply', return_value=('这份担心让你很累。', 'doubao')):
             for stage in ('listen', 'clarify', 'control'):
@@ -96,6 +118,33 @@ class ConversationMemoryTests(SimpleTestCase):
 
 
 class GuardedStreamTests(SimpleTestCase):
+    def test_proposed_action_is_shared_with_model_card_and_visible_reply(self):
+        message = '我现在愿意试试一个小步骤，帮我选一个吧。'
+        raw = '担心拖后腿很难受，我听见了。你可以选：1. 复制报错代码。2. 打开队友代码，只看第一行注释。'
+        events = self.events([(raw[:30], 'doubao'), (raw[30:], 'doubao')], message=message, scenario='coding')
+        reply = self.visible(events)
+        card = events[-1]['action_card']
+        self.assertIn(card['step'], reply)
+        self.assertNotIn('复制报错代码', reply)
+        self.assertNotIn('注释', reply)
+        self.assertIn('我听见了', reply)
+        prompt = build_user_prompt(message, 'coding', phase='control')
+        self.assertIn(card['step'], prompt)
+        with patch('core.views.generate_ai_reply', return_value=(raw, 'doubao')):
+            normal = self.client.post(reverse('chat'), {'message': message, 'scenario': 'coding'}).json()
+        self.assertEqual(normal['reply'], reply)
+        self.assertEqual(normal['action_card'], card)
+
+    def test_lighter_card_is_also_the_only_proposed_action(self):
+        from .actions import build_action_card
+        old = build_action_card('coding')['step']
+        events = self.events([('不必勉强自己。你可以先看注释。', 'doubao')],
+            message='这一步太难', scenario='coding', selected_action=old, action_status='adjusting')
+        reply = self.visible(events)
+        self.assertNotEqual(events[-1]['action_card']['step'], old)
+        self.assertIn(events[-1]['action_card']['step'], reply)
+        self.assertNotIn('注释', reply)
+
     def events(self, chunks, **payload):
         with patch('core.views.stream_ai_reply', return_value=iter(chunks)):
             response = self.client.post(reverse('chat'), {

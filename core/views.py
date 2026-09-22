@@ -12,7 +12,8 @@ from django.views.decorators.http import require_GET, require_POST
 
 from .ai_client import AIUnavailable, generate_ai_reply, stream_ai_reply
 from .models import OutcomeRecord
-from .conversation import choose_phase, parse_memory, remember, take_sentences
+from .actions import build_action_card
+from .conversation import END_REQUEST, choose_phase, parse_memory, remember, take_sentences
 
 
 SCENARIO_PROMPTS = {
@@ -55,64 +56,6 @@ COMPLETED_RESTART_PATTERNS = (
     '还没开始', '现在开始', '先做一点', '尝试一下',
 )
 
-ACTION_CARDS = {
-    'competition': {
-        'title': '先圈出最关键的一项',
-        'steps': [
-            '打开任务清单，只圈出截止最近且最重要的一项，写下它的第一个动作。',
-            '把当前竞赛任务分成“必须完成、可以优化、暂时放下”三栏，各写一项。',
-            '找出最不确定的一处，用一句话写成准备向队友或老师确认的问题。',
-        ],
-    },
-    'research': {
-        'title': '留下一个可见的进展',
-        'steps': [
-            '写下当前假设、已经尝试的方法，以及下一项可以验证的操作。',
-            '只整理一段实验记录或一篇文献的三个要点，不要求今天得出结论。',
-            '把卡住的位置写成一个具体问题，准备发给同伴或老师确认。',
-        ],
-    },
-    'coding': {
-        'title': '把问题缩小一圈',
-        'steps': [
-            '保存当前版本，写出最小复现步骤，接下来只验证一个变量。',
-            '把报错信息和预期结果各写一句，再定位最早出现差异的位置。',
-            '离开屏幕两分钟，回来后只检查输入、状态和边界条件中的一项。',
-        ],
-    },
-    'gpa': {
-        'title': '回到能控制的事情',
-        'steps': [
-            '选出本周最有机会改善的一门课，只写下一次可以完成的具体行动。',
-            '暂时关掉成绩比较页面，列出一项已经做到和一项可以调整的事情。',
-            '给一位任课老师或同学准备一个关于学习方法的具体问题。',
-        ],
-    },
-    'exam': {
-        'title': '开始一个短专注',
-        'steps': [
-            '选择一个最小知识点，关闭其他窗口，专注十分钟后停下来确认进度。',
-            '只做一道最能暴露薄弱点的题，完成后记录卡住的具体步骤。',
-            '把今天的复习目标缩成一页、一节或十分钟能完成的范围。',
-        ],
-    },
-    'setback': {
-        'title': '把结果和能力分开',
-        'steps': [
-            '写下这次结果提供的一条信息，再选一个今天能够调整的动作。',
-            '分别写一句“这次没有做好什么”和“这不代表我是什么样的人”。',
-            '找一位可信任的人，只说明事实和你现在最需要的一种支持。',
-        ],
-    },
-    'general': {
-        'title': '只做眼前的一小步',
-        'steps': [
-            '给自己十分钟，只开始眼前最容易完成的一件小事，时间到就停下来看看感受。',
-            '把脑子里的担心写成三句话，再圈出其中唯一能在今天处理的一句。',
-            '先喝几口水、慢慢呼气三次，再决定接下来只做哪一件事。',
-        ],
-    },
-}
 
 
 @cache_control(public=True, max_age=300, s_maxage=3600, stale_while_revalidate=86400)
@@ -123,7 +66,9 @@ def landing(request):
 @ensure_csrf_cookie
 @cache_control(private=True, max_age=300)
 def home(request):
-    return render(request, 'core/home.html', {'scenario_prompts': SCENARIO_PROMPTS})
+    return render(request, 'core/home.html', {
+        'scenario_prompts': SCENARIO_PROMPTS, 'trial_mode': request.GET.get('trial') == '1',
+    })
 
 
 @cache_control(public=True, max_age=300, s_maxage=3600, stale_while_revalidate=86400)
@@ -173,6 +118,8 @@ def chat(request):
         data = build_safety_response('followup', message, conversation_intent)
         return stream_static_response(data) if wants_stream else JsonResponse(data)
 
+    if not conversation_intent and END_REQUEST.search(message):
+        conversation_intent = 'end'
     memory = remember(parse_memory(request.POST.get('memory', '{}')), message, history, intent=conversation_intent)
     if conversation_intent:
         data = build_intent_response(conversation_intent, flow_stage, action_status)
@@ -202,10 +149,10 @@ def chat(request):
         reply = build_supportive_reply(message, scenario, phase, selected_action, action_status)
         provider = 'fallback'
 
-    guard = ReplyGuard(message, history, phase, selected_action, action_status, memory)
+    action_card = build_action_card(scenario, selected_action) if phase == 'control' else None
+    guard = ReplyGuard(message, history, phase, selected_action, action_status, memory, action_card)
     guard.feed(reply, final=True)
     reply = guard.reply
-    action_card = build_action_card(scenario, selected_action) if phase == 'control' else None
     return JsonResponse({
         'reply': reply,
         'provider': provider,
@@ -232,18 +179,22 @@ def stream_static_response(data):
         yield stream_event('delta', text=data.get('reply', ''))
         yield stream_event('done', **data)
 
-    return configure_stream_response(events())
+    response = configure_stream_response(events())
+    response['X-Chat-Mode'] = 'safety' if data.get('risk') else 'guided'
+    return response
 
 
 class ReplyGuard:
     """Only approved complete sentences can become visible; emitted text is immutable."""
 
-    def __init__(self, message, history, phase, selected_action, action_status, memory):
+    def __init__(self, message, history, phase, selected_action, action_status, memory, action_card=None):
         self.buffer = ''
         self.parts = []
         self.phase = phase
         self.action_status = action_status
         self.selected_action = selected_action
+        self.action_card = action_card
+        self.action_presented = False
         self.questions = list(memory.get('questions', []))
         for item in history:
             if item.get('role') == 'assistant':
@@ -270,6 +221,12 @@ class ReplyGuard:
             sentence = normalize_reply_punctuation(sentence)
             if not sentence:
                 continue
+            # Action instructions come from the shared card, never a parallel model list.
+            if self.phase == 'control' and (
+                re.search(r'行动卡|步骤|选项|[0-9一二三][.、：:]|[？?]|你可以|不妨|建议|试[试着]|先.{0,12}(做|写|列|看|打开|保存|复制|喝|休息)|复制|注释|清单|复现|验证|任务|准备好', sentence)
+                or (self.action_card and action_text(self.action_card['step']) in sentence)
+            ):
+                continue
             if self.action_status == 'completed' and (
                 any(word in sentence for word in COMPLETED_RESTART_PATTERNS)
                 or re.search(r'还没.{0,5}(做|完成|开始)|完成了吗|做完了吗|是否.{0,3}(完成|开始)|再.{0,4}做一点|行动卡', sentence)
@@ -293,6 +250,12 @@ class ReplyGuard:
                 continue
             if not self.parts and self.selected_action and self.phase == 'action' and self.action_status != 'completed':
                 sentence = anchor_selected_action(sentence, self.phase, self.selected_action, self.action_status)
+            self.parts.append(sentence)
+            emitted.append(sentence)
+        if final and self.action_card and not self.action_presented:
+            self.action_presented = True
+            lead = '\n\n' if self.parts else '好，我们按你现在愿意尝试的节奏来，不需要一下子解决全部。\n\n'
+            sentence = f'{lead}这一小步是：{self.action_card["step"]}\n做到这里就可以停下来，感受一下自己。'
             self.parts.append(sentence)
             emitted.append(sentence)
         if final and not self.parts:
@@ -319,7 +282,7 @@ def stream_model_response(message, scenario, history, phase, selected_action, ac
             'meta', stage=phase, action_status=action_status, action_card=action_card,
         )
         yield stream_event('status', text=status_labels.get(phase, '正在认真整理回应'))
-        guard = ReplyGuard(message, history, phase, selected_action, action_status, memory)
+        guard = ReplyGuard(message, history, phase, selected_action, action_status, memory, action_card)
         provider = 'fallback'
         interrupted = False
         try:
@@ -345,6 +308,7 @@ def stream_model_response(message, scenario, history, phase, selected_action, ac
             else:
                 interrupted = True
                 guard.buffer = ''
+                guard.action_card = None
 
         for sentence in guard.feed('', final=True):
             yield stream_event('delta', text=sentence, provider=provider)
@@ -380,6 +344,11 @@ def record_outcome(request):
             request.session.pop('outcome_event_id', None)
         return JsonResponse({'deleted': True})
 
+    if request.POST.get('consent') != 'granted':
+        return JsonResponse({'error': 'consent_required'}, status=400)
+    if session_event_id != str(event_id) and OutcomeRecord.objects.filter(event_id=event_id).exists():
+        return JsonResponse({'error': 'event_mismatch'}, status=403)
+
     scenario = request.POST.get('scenario', 'general').strip()
     valid_scenarios = {value for value, _ in OutcomeRecord.SCENARIOS}
     if scenario not in valid_scenarios:
@@ -400,7 +369,7 @@ def record_outcome(request):
         defaults={'scenario': scenario},
     )
     record.scenario = scenario
-    if initial_stress is not None:
+    if initial_stress is not None and record.initial_stress is None and record.final_stress is None:
         record.initial_stress = initial_stress
     if final_stress is not None:
         record.final_stress = final_stress
@@ -443,6 +412,10 @@ def outcome_summary():
         'outcome_completed': completed,
         'outcome_rated': rated_count,
         'outcome_improved': improved,
+        'outcome_unchanged': rated.filter(final_stress=F('initial_stress')).count(),
+        'outcome_increased': rated.filter(final_stress__gt=F('initial_stress')).count(),
+        'outcome_missing_initial': records.filter(initial_stress__isnull=True).count(),
+        'outcome_missing_final': records.filter(final_stress__isnull=True).count(),
         'outcome_action_rate': round(completed / total * 100) if total else None,
         'outcome_improvement_rate': round(improved / rated_count * 100) if rated_count else None,
         'outcome_average_change': round(float(average_change), 1) if average_change is not None else None,
@@ -678,18 +651,6 @@ def normalize_reply_punctuation(reply):
     return reply.strip()
 
 
-def build_action_card(scenario, excluded_step=''):
-    card = ACTION_CARDS.get(scenario, ACTION_CARDS['general'])
-    steps = [step for step in card['steps'] if step != excluded_step]
-    if excluded_step in card['steps']:
-        steps.append(excluded_step)
-    return {
-        'title': card['title'],
-        'step': steps[0],
-        'alternatives': steps[1:],
-        'duration': '约 10 分钟',
-        'note': '不求一次做好，只确认这一步是否适合现在的你。',
-    }
 
 
 def build_supportive_reply(message, scenario, phase='clarify', selected_action='', action_status=''):
@@ -709,18 +670,7 @@ def build_supportive_reply(message, scenario, phase='clarify', selected_action='
 
     excerpt = message[:80]
     if phase == 'control':
-        if selected_action:
-            return (
-                f'你刚才选择的“{selected_action}”对现在的你来说还是有些难，这个反馈很重要。'
-                '我们不勉强自己硬撑，而是把动作继续缩小。\n\n'
-                '我在下面换了一张行动卡。你可以看看，哪一步更接近“现在就能开始”？'
-            )
-        return (
-            f'我听见了，你现在面对的不只是任务本身，还有“{excerpt}”带来的担心。'
-            '结果和别人的评价暂时不完全由你控制，但今天从哪里开始、把步骤缩到多小，是可以由你决定的。\n\n'
-            '我在下面放了一张“今日行动卡”。你可以直接选它，也可以换一个更轻的步骤。'
-            '哪一种安排会让你觉得更容易开始一点？'
-        )
+        return '谢谢你告诉我现在需要什么。我们按你的节奏来，不必勉强自己，也不需要一下子解决全部。'
     if phase == 'action':
         action = action_text(selected_action) or '刚才选定的那一步'
         if action_status == 'completed':

@@ -21,6 +21,8 @@ class PageTests(TestCase):
         self.assertContains(response, 'landing.js?v=2')
         self.assertContains(response, 'sound-effects.js?v=3')
         self.assertContains(response, '关闭页面声音')
+        self.assertContains(response, '体验数据收集中')
+        self.assertNotContains(response, '<strong>0</strong>')
 
     def test_chat_page_is_available_at_chat_path(self):
         response = self.client.get(reverse('home'))
@@ -52,7 +54,7 @@ class PageTests(TestCase):
         self.assertIn('public', journal['Cache-Control'])
         self.assertEqual(worker['Content-Type'], 'application/javascript')
         self.assertEqual(worker['Service-Worker-Allowed'], '/')
-        self.assertContains(worker, 'mindmate-pages-v11')
+        self.assertContains(worker, 'mindmate-pages-v14')
 
     def test_csrf_endpoint_returns_a_token(self):
         response = self.client.get(reverse('csrf'))
@@ -113,6 +115,7 @@ class GuidedConversationTests(TestCase):
         self.assertEqual([event['type'] for event in events], ['delta', 'done'])
         self.assertTrue(events[-1]['risk'])
         self.assertEqual(events[-1]['provider'], 'safety')
+        self.assertEqual(response['X-Chat-Mode'], 'safety')
         stream.assert_not_called()
 
     @patch('core.views.generate_ai_reply', return_value=('我听见这件事让你很担心。最压着你的部分是什么？', 'doubao'))
@@ -324,15 +327,56 @@ class GuidedConversationTests(TestCase):
 
 
 class OutcomeRecordTests(TestCase):
+    def test_missing_consent_cannot_create_or_change_a_record(self):
+        event_id = str(uuid.uuid4())
+        data = {'event_id': event_id, 'initial_stress': '4'}
+        self.assertEqual(self.client.post(reverse('record_outcome'), data).status_code, 400)
+        self.assertFalse(OutcomeRecord.objects.exists())
+        self.client.post(reverse('record_outcome'), {**data, 'consent': 'granted'})
+        self.assertEqual(self.client.post(reverse('record_outcome'), {**data, 'final_stress': '1'}).status_code, 400)
+        self.assertIsNone(OutcomeRecord.objects.get().final_stress)
+
+    def test_another_session_cannot_update_an_existing_event(self):
+        from django.test import Client
+        data = {'consent': 'granted', 'event_id': str(uuid.uuid4()), 'initial_stress': '5'}
+        self.client.post(reverse('record_outcome'), data)
+        self.assertEqual(Client().post(reverse('record_outcome'), {**data, 'final_stress': '1'}).status_code, 403)
+        self.assertIsNone(OutcomeRecord.objects.get().final_stress)
+
+    def test_baseline_cannot_be_rewritten_or_backfilled_after_post_rating(self):
+        data = {'consent': 'granted', 'event_id': str(uuid.uuid4()), 'initial_stress': '4'}
+        self.client.post(reverse('record_outcome'), data)
+        self.client.post(reverse('record_outcome'), {**data, 'initial_stress': '5', 'final_stress': '3'})
+        self.assertEqual(OutcomeRecord.objects.get().initial_stress, 4)
+        self.client.post(reverse('record_outcome'), {'event_id': data['event_id'], 'consent': 'withdrawn'})
+        data = {'consent': 'granted', 'event_id': str(uuid.uuid4()), 'final_stress': '2'}
+        self.client.post(reverse('record_outcome'), data)
+        self.client.post(reverse('record_outcome'), {**data, 'initial_stress': '5'})
+        self.assertIsNone(OutcomeRecord.objects.get().initial_stress)
+
+    def test_summary_includes_increase_unchanged_and_missing_pairs(self):
+        for before, after in ((5, 2), (3, 3), (2, 4), (None, 2), (4, None)):
+            OutcomeRecord.objects.create(initial_stress=before, final_stress=after)
+        response = self.client.get(reverse('landing'))
+        self.assertEqual(response.context['outcome_rated'], 3)
+        self.assertEqual(response.context['outcome_improved'], 1)
+        self.assertEqual(response.context['outcome_unchanged'], 1)
+        self.assertEqual(response.context['outcome_increased'], 1)
+        self.assertEqual(response.context['outcome_missing_initial'], 1)
+        self.assertEqual(response.context['outcome_missing_final'], 1)
+        self.assertAlmostEqual(response.context['outcome_average_change'], 0.3)
+
     def test_consented_outcome_stores_only_structured_fields_and_updates(self):
         event_id = str(uuid.uuid4())
         create_response = self.client.post(reverse('record_outcome'), {
+            'consent': 'granted',
             'event_id': event_id,
             'scenario': 'research',
             'initial_stress': '5',
             'action_completed': 'false',
         })
         update_response = self.client.post(reverse('record_outcome'), {
+            'consent': 'granted',
             'event_id': event_id,
             'scenario': 'research',
             'initial_stress': '5',
@@ -363,6 +407,7 @@ class OutcomeRecordTests(TestCase):
     def test_outcome_can_be_withdrawn_and_removed(self):
         event_id = str(uuid.uuid4())
         self.client.post(reverse('record_outcome'), {
+            'consent': 'granted',
             'event_id': event_id,
             'scenario': 'coding',
         })
@@ -392,6 +437,7 @@ class OutcomeRecordTests(TestCase):
 
     def test_invalid_stress_value_is_rejected(self):
         response = self.client.post(reverse('record_outcome'), {
+            'consent': 'granted',
             'event_id': str(uuid.uuid4()),
             'initial_stress': '9',
         })
@@ -401,6 +447,7 @@ class OutcomeRecordTests(TestCase):
 
     def test_invalid_experience_rating_is_rejected(self):
         response = self.client.post(reverse('record_outcome'), {
+            'consent': 'granted',
             'event_id': str(uuid.uuid4()),
             'helpful_rating': '0',
         })
@@ -412,6 +459,7 @@ class OutcomeRecordTests(TestCase):
     def test_feedback_note_is_trimmed_and_length_limited(self):
         event_id = str(uuid.uuid4())
         response = self.client.post(reverse('record_outcome'), {
+            'consent': 'granted',
             'event_id': event_id,
             'feedback_note': f"  {'建议' * 180}  ",
         })

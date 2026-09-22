@@ -6,10 +6,25 @@ import re
 
 LISTEN_REQUEST = re.compile(r'只想.{0,8}(聊|说|倾诉|听)|不想.{0,8}(建议|办法|行动|任务|回答|分析)|别.{0,5}(问|催|建议)|先.{0,6}(陪|听我)|暂时.{0,5}(不做|不聊任务)')
 DISTRESS = re.compile(r'崩溃|撑不住|喘不过气|一直哭|哭了|想哭|很难受|好难受|太难受|好累|很疲惫|脑子很乱')
-ACTION_REQUEST = re.compile(r'怎么(做|开始)|如何.{0,5}(开始|做)|给我.{0,6}(建议|步骤|行动)|帮我.{0,6}(拆|计划|安排)|想.{0,5}(试试|行动|做一点|开始)|准备好了|可以开始|选.{0,4}小步骤')
+ACTION_REQUEST = re.compile(r'怎么(做|开始)|如何.{0,5}(开始|做)|给我.{0,6}(建议|步骤|行动)|帮我.{0,10}(拆|计划|安排|选|找.{0,4}步骤)|(?:想|愿意|可以|打算).{0,8}(试试|行动|做一点|开始)|准备好了|可以开始|选.{0,8}(小步骤|小行动)')
 CLARIFY_REQUEST = re.compile(r'帮我.{0,6}(梳理|分析|理清)|想.{0,4}(梳理|分析|理清)')
 NOT_READY = re.compile(r'还没想好|不想做|不想开始|(不|没|别|暂不).{0,5}(想做|想开始|准备好|行动|建议|开始|办法)|不要.{0,6}怎么(办|做)')
 QUESTION = re.compile(r'[^。！!；;\n？?]+[？?]')
+END_REQUEST = re.compile(r'(今天|这次|本次|我们)?先?聊到这[里儿]?|结束本次对话|今天不聊了|先不聊了')
+
+
+def current_preference(message):
+    """Resolve explicit changes in order; quoted past wishes do not set the pace."""
+    current = re.sub(r'[“「].*?[”」]', '', message)
+    preference = ''
+    for clause in re.split(r'[。！？!?；;，,\n]|但是|不过|但现在|现在', current):
+        if NOT_READY.search(clause) or LISTEN_REQUEST.search(clause):
+            preference = 'listen'
+        elif CLARIFY_REQUEST.search(clause):
+            preference = 'clarify'
+        elif ACTION_REQUEST.search(clause):
+            preference = 'action'
+    return preference
 
 
 def clean_text(value, limit=180):
@@ -70,25 +85,25 @@ def remember(memory, message, history, reply='', intent=''):
     for question in QUESTION.findall(reply):
         if question[:180] not in questions:
             questions.append(question[:180])
-    if intent in ('stay', 'lighter') or LISTEN_REQUEST.search(message) or NOT_READY.search(message):
+    preference = current_preference(message)
+    if intent in ('stay', 'lighter'):
         result['preference'] = 'listen'
-    elif CLARIFY_REQUEST.search(message):
-        result['preference'] = 'clarify'
-    elif ACTION_REQUEST.search(message):
-        result['preference'] = 'action'
+    elif preference:
+        result['preference'] = preference
     return parse_memory(result)
 
 
 def choose_phase(message, action_status='', memory=None):
     memory = memory or {}
-    if LISTEN_REQUEST.search(message) or NOT_READY.search(message):
+    preference = current_preference(message)
+    if preference == 'listen':
         return 'listen'
-    if DISTRESS.search(message) and not ACTION_REQUEST.search(message):
+    if DISTRESS.search(message) and preference != 'action':
         return 'listen'
-    if CLARIFY_REQUEST.search(message):
+    if preference == 'clarify':
         return 'clarify'
     action_update = re.search(r'我.{0,3}(完成|开始|卡住)|这一步太难|已经完成', message)
-    if memory.get('preference') == 'listen' and not ACTION_REQUEST.search(message) and not action_update:
+    if memory.get('preference') == 'listen' and preference != 'action' and not action_update:
         return 'listen'
     if action_status == 'completed':
         return 'action'
@@ -96,7 +111,7 @@ def choose_phase(message, action_status='', memory=None):
         return 'control'
     if action_status in ('selected', 'started', 'stuck'):
         return 'action'
-    if ACTION_REQUEST.search(message):
+    if preference == 'action':
         return 'control'
     return 'clarify'
 

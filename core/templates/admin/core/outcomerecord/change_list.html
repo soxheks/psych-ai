@@ -37,6 +37,8 @@
         <section><span>有效前后测</span><strong>{{ outcome_dashboard.paired }}</strong><small>份</small></section>
     </div>
     <p class="outcome-rating-line">平均评分：被理解 {{ outcome_dashboard.averages.understood|default:"--" }} · 建议可执行 {{ outcome_dashboard.averages.actionable|default:"--" }} · 帮助程度 {{ outcome_dashboard.averages.helpful|default:"--" }} · 再次使用意愿 {{ outcome_dashboard.averages.return_intent|default:"--" }}</p>
+    <p class="outcome-rating-line">数据完整性：缺少前测 {{ outcome_dashboard.missing_initial }} 份，缺少后测 {{ outcome_dashboard.missing_final }} 份（可能重叠）。完整前后测中，降低 {{ outcome_dashboard.improved }} 份、不变 {{ outcome_dashboard.unchanged }} 份、上升 {{ outcome_dashboard.increased }} 份。</p>
+    <p class="outcome-rating-line">统计单位是记录，不是独立人数；未配对数据不计入压力变化。自愿样本存在选择偏差，当次自评分数不能作为临床效果或因果证据。</p>
 </section>
 {% endif %}
 {{ block.super }}

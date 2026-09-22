@@ -9,7 +9,7 @@
     <title>心研同伴 | 把心情放在这里</title>
     <link rel="preload" as="image" href="{% static 'core/images/landing-room.jpg' %}" fetchpriority="high">
     <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=4">
-    <link rel="stylesheet" href="{% static 'core/css/landing.css' %}?v=5">
+    <link rel="stylesheet" href="{% static 'core/css/landing.css' %}?v=8">
     <script defer src="{% static 'core/js/sound-effects.js' %}?v=3"></script>
     <script defer src="{% static 'core/js/page-transition.js' %}?v=4"></script>
     <script defer src="{% static 'core/js/landing.js' %}?v=2"></script>
@@ -90,13 +90,22 @@
                 </div>
                 <p>仅汇总用户主动同意贡献的结构化数据，不保存倾诉原文，也不把变化解释为医疗效果。</p>
             </div>
-            <div class="outcome-metrics">
+            {% if outcome_total %}<div class="outcome-metrics">
                 <article><span>已记录体验</span><strong>{{ outcome_total }}</strong><small>份匿名记录</small></article>
-                <article><span>完成小行动</span><strong>{{ outcome_completed }}</strong><small>{% if outcome_total %}完成率 {{ outcome_action_rate }}%{% else %}数据待积累{% endif %}</small></article>
-                <article><span>压力有所缓解</span><strong>{{ outcome_improved }}</strong><small>{% if outcome_rated %}占已前后测的 {{ outcome_improvement_rate }}%{% else %}数据待积累{% endif %}</small></article>
+                <article><span>完整前后评分</span><strong>{{ outcome_rated }}</strong><small>共 {{ outcome_total }} 份记录，未配对记录不计入变化</small></article>
+                <article><span>完成小行动</span><strong>{{ outcome_completed }}</strong><small>自愿反馈中的完成次数，不代表全部访客</small></article>
                 <article><span>平均压力变化</span><strong>{% if outcome_rated %}{{ outcome_average_change }}{% else %}--{% endif %}</strong><small>{% if outcome_rated %}分，正数表示降低{% else %}需要真实前后测{% endif %}</small></article>
             </div>
-            <p class="outcome-note">当前共 {{ outcome_rated }} 份记录同时完成了前后压力评分。样本较少时只展示事实，不作效果推断。</p>
+            <p class="outcome-note">{% if outcome_rated %}在 {{ outcome_rated }} 份完整前后评分中：压力降低 {{ outcome_improved }} 份，不变 {{ outcome_unchanged }} 份，上升 {{ outcome_increased }} 份。{% else %}还没有完整的前后评分，暂时无法比较压力变化。{% endif %} 这是自愿记录的当次主观感受，不是临床量表，也不能证明变化由 AI 引起。记录数不等于独立人数。</p>{% else %}
+            <div class="outcome-empty" role="status">
+                <span aria-hidden="true"></span>
+                <div><strong>体验数据收集中</strong><p>目前还没有用户主动同意贡献的匿名记录。我们只展示真实数据，不用示例数字填充结果。</p></div>
+            </div>
+            {% endif %}
+            <div class="trial-invitation">
+                <div><h3>用一次真实体验，帮助我们改进</h3><p>开始和结束时各选择一次压力程度；跳过评分、只聊天，或不贡献数据都可以。</p></div>
+                <a class="button" href="{% url 'home' %}?trial=1">参与自愿体验 <span aria-hidden="true">→</span></a>
+            </div>
         </section>
     </main>
     {% include 'core/_page_transition.html' %}

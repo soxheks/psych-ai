@@ -1,3 +1,4 @@
+document.documentElement.classList.add('progressive-ready');
 const messages = document.querySelector('#messages');
 const form = document.querySelector('#chatForm');
 const input = document.querySelector('#messageInput');
@@ -15,6 +16,7 @@ const welcomeIntro = document.querySelector('#welcomeIntro');
 const moodOptions = document.querySelectorAll('.mood-option');
 const initialStressOptions = document.querySelectorAll('#initialStressScale [data-stress]');
 const initialStressFeedback = document.querySelector('#initialStressFeedback');
+const initialStressCheckin = document.querySelector('#initialStressCheckin');
 const characterGreeting = document.querySelector('#characterGreeting');
 const characterLook = document.querySelector('.character-look');
 const draftStatus = document.querySelector('#draftStatus');
@@ -157,6 +159,10 @@ let metricsEnabled = false;
 let restoringProgress = false;
 let outcomeId = '';
 let outcomeSaveTimer = null;
+let outcomeQueue = Promise.resolve();
+let waitingForInitialStress = false;
+let initialStressSkipped = false;
+let retryingVisibleMessage = false;
 let feedbackNote = '';
 const experienceRatings = {
     understood_rating: null,
@@ -196,6 +202,24 @@ const providerLabels = {
     fallback: '基础陪伴模式',
     guided: '对话节奏陪伴',
 };
+
+function revealInitialStressCheckin({ announce = false } = {}) {
+    if (!initialStressCheckin?.classList.contains('is-deferred')) return;
+    initialStressCheckin.classList.remove('is-deferred');
+    initialStressCheckin.setAttribute('aria-hidden', 'false');
+    if (announce) announcement.textContent = '可选的压力记录已经展开，也可以直接继续倾诉。';
+}
+
+function setSafetyPresentation(active) {
+    chatPanel?.classList.toggle('is-safety', active);
+    characterGreeting.disabled = active;
+    voicePreview.disabled = active || pending;
+    voiceToggle.disabled = active;
+    if (active) {
+        resetCharacterLook();
+        stopSpeech();
+    }
+}
 
 function setPrivacyStatus(message) {
     if (privacyStatus) privacyStatus.textContent = message;
@@ -238,7 +262,12 @@ function saveProgress() {
     setPrivacyStatus(saved ? '进度已仅保存在这台设备。' : '浏览器未允许保存，当前对话不受影响。');
 }
 
-async function recordOutcome({ withdrawn = false } = {}) {
+function recordOutcome(options = {}) {
+    outcomeQueue = outcomeQueue.then(() => saveOutcome(options));
+    return outcomeQueue;
+}
+
+async function saveOutcome({ withdrawn = false } = {}) {
     if (restoringProgress || (!metricsEnabled && !withdrawn)) return;
     if (!outcomeId) {
         outcomeId = readSession(OUTCOME_ID_KEY) || createEventId();
@@ -247,6 +276,7 @@ async function recordOutcome({ withdrawn = false } = {}) {
     try {
         await ensureCsrfToken();
         const body = new URLSearchParams({
+            consent: withdrawn ? 'withdrawn' : 'granted',
             event_id: outcomeId,
             scenario: activeScenario || 'general',
             initial_stress: initialStress === null ? '' : String(initialStress),
@@ -258,7 +288,6 @@ async function recordOutcome({ withdrawn = false } = {}) {
             return_intent_rating: experienceRatings.return_intent_rating === null ? '' : String(experienceRatings.return_intent_rating),
             feedback_note: feedbackNote,
         });
-        if (withdrawn) body.set('consent', 'withdrawn');
         const response = await fetch('/api/outcomes/', {
             method: 'POST',
             credentials: 'same-origin',
@@ -279,8 +308,9 @@ async function recordOutcome({ withdrawn = false } = {}) {
             setCompletionConsentStatus('已匿名保存结构化结果，不包含对话原文。');
         }
     } catch {
-        setPrivacyStatus('匿名数据暂未保存，当前对话不受影响。');
-        setCompletionConsentStatus('暂未保存成功，可以稍后重新开启匿名贡献。');
+        const notice = withdrawn ? '暂未删除成功，请重新开启后关闭匿名贡献以重试。' : '匿名数据暂未保存，当前对话不受影响。';
+        setPrivacyStatus(notice);
+        setCompletionConsentStatus(notice);
     }
 }
 
@@ -505,7 +535,12 @@ function renderCompletionSummary(restoredRating = null) {
     const comparison = summary.querySelector('.stress-comparison');
     const completionConsent = summary.querySelector('.completion-metrics-consent');
     const feedbackTextarea = summary.querySelector('.completion-feedback-note textarea');
-    summary.querySelector('.completion-action').textContent = `你完成了：${action}`;
+    const completedAction = actionStatus === 'completed';
+    summary.querySelector('h3').textContent = completedAction ? '你已经迈出了一小步' : '给此刻的自己一点肯定';
+    summary.querySelector('.completion-action').textContent = completedAction
+        ? `你完成了：${action}`
+        : '谢谢你留出这段时间照顾自己。今天可以先停在这里，不必为了结束而完成任务。';
+    summary.querySelector('.completion-stress-options').setAttribute('aria-label', '记录此刻的压力程度，1分很轻，5分很重');
     prompt.textContent = initialStress === null
         ? '现在，再轻轻感受一下：此刻的压力大约有几分？'
         : `开始时你记录了 ${initialStress} 分。现在的压力大约有几分？`;
@@ -562,7 +597,7 @@ function renderCompletionSummary(restoredRating = null) {
     messages.append(summary);
     syncMetricsControls();
     if (restoredRating !== null) applyRating(restoredRating, false);
-    announcement.textContent = '行动已经完成。可以选择记录此刻的压力感受。';
+    announcement.textContent = '这一刻的小结已准备好，可以自愿记录现在的感受。';
     scrollMessages(true);
 }
 
@@ -600,7 +635,7 @@ function enterSafetyMode(data) {
     conversationMemory = {};
     conversationHistory.length = 0;
     completionSummaryRendered = false;
-    chatPanel?.classList.add('is-safety');
+    setSafetyPresentation(true);
     dialogueStageLabel.textContent = '先确保此刻安全';
     dialogueStageLabel.closest('.dialogue-path')?.classList.remove('is-complete');
     dialogueStages.forEach((item, index) => {
@@ -611,7 +646,6 @@ function enterSafetyMode(data) {
     });
     conversationChoices.hidden = true;
     resumeConversation.hidden = true;
-    stopSpeech();
     removeSavedProgress('为保护你，安全支持模式的内容不会保存。');
     renderSafetyCard(data.safety_card);
 }
@@ -656,6 +690,7 @@ function restoreProgress() {
     });
     if (initialStress !== null) {
         initialStressFeedback.textContent = `已恢复：开始时的压力是 ${initialStress} 分。`;
+        revealInitialStressCheckin();
     }
     saved.history.slice(-6).forEach((item) => {
         if (!item || !['user', 'assistant'].includes(item.role) || typeof item.content !== 'string') return;
@@ -730,6 +765,7 @@ scenarios.forEach((button) => {
         activeScenario = button.dataset.scenario;
         document.querySelector('#modeTitle').textContent = '学业压力陪伴';
         input.value = button.dataset.prompt;
+        revealInitialStressCheckin({ announce: true });
         resizeInput();
         input.focus();
         saveProgress();
@@ -749,6 +785,7 @@ moodOptions.forEach((button) => {
             item.setAttribute('aria-pressed', 'false');
         });
         input.value = button.dataset.prompt;
+        revealInitialStressCheckin({ announce: true });
         resizeInput();
         input.focus();
         saveProgress();
@@ -759,13 +796,26 @@ moodOptions.forEach((button) => {
 
 initialStressOptions.forEach((button) => {
     button.addEventListener('click', () => {
+        if (conversationHistory.length) return;
         initialStress = Number(button.dataset.stress);
         initialStressOptions.forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
         initialStressFeedback.textContent = `已记下：此刻压力 ${initialStress} 分。结束时我们再轻轻看一眼。`;
         announcement.textContent = initialStressFeedback.textContent;
         saveProgress();
         recordOutcome();
+        if (waitingForInitialStress) {
+            waitingForInitialStress = false;
+            document.querySelector('#skipInitialStress').hidden = true;
+            form.requestSubmit();
+        }
     });
+});
+
+document.querySelector('#skipInitialStress')?.addEventListener('click', () => {
+    initialStressSkipped = true;
+    waitingForInitialStress = false;
+    document.querySelector('#skipInitialStress').hidden = true;
+    form.requestSubmit();
 });
 
 progressConsent?.addEventListener('change', () => {
@@ -805,6 +855,8 @@ conversationIntentButtons.forEach((button) => {
 });
 
 resumeConversation?.addEventListener('click', () => {
+    messages.querySelector('.completion-summary')?.remove();
+    completionSummaryRendered = false;
     setConversationEnded(false);
     appendMessage('assistant', '欢迎回来。不用重新整理，可以从此刻最想说的一句开始。');
     conversationChoices.hidden = false;
@@ -885,16 +937,19 @@ function setWaitingCopy(thinking, text) {
     if (!thinking?.classList.contains('pending')) return;
     thinking.querySelector('.bubble').textContent = text;
     draftStatus.textContent = text.replace(/[。…]+$/, '');
-    chatStatus.textContent = '正在回应';
+    const connecting = text.includes('连接陪伴服务');
+    chatStatus.textContent = connecting ? '正在连接' : '正在回应';
+    chatStatus.dataset.state = connecting ? 'connecting' : 'online';
 }
 
 function startWaitingProgress(thinking) {
     waitingTimers.forEach((timer) => window.clearTimeout(timer));
     const stages = [
-        [0, '正在理解你此刻最在意的部分…'],
-        [1800, '正在回看刚才对话里的重点…'],
-        [4500, '正在整理一个更合适的回应…'],
-        [8500, '这次需要多一点时间，我还在这里…'],
+        [0, '正在连接陪伴服务…'],
+        [1200, '已经连接，正在理解你最在意的部分…'],
+        [3600, '正在回看刚才对话里的重点…'],
+        [6800, '正在整理一个更合适的回应…'],
+        [11000, '这次需要多一点时间，我还在这里…'],
     ];
     waitingTimers = stages.map(([delay, text]) => window.setTimeout(() => {
         setWaitingCopy(thinking, text);
@@ -940,6 +995,7 @@ async function readChatResponse(response, thinking) {
             if (event.provider) {
                 thinking.dataset.provider = event.provider;
                 chatStatus.textContent = providerLabels[event.provider] || '正在回应';
+                chatStatus.dataset.state = 'online';
             }
             scrollMessages();
         } else if (event.type === 'done') {
@@ -970,6 +1026,16 @@ form.addEventListener('submit', async (event) => {
     const text = input.value.trim();
     if (!text || pending) return;
 
+    if (form.dataset.trial === 'true' && !conversationHistory.length && initialStress === null && !initialStressSkipped) {
+        revealInitialStressCheckin();
+        waitingForInitialStress = true;
+        document.querySelector('#skipInitialStress').hidden = false;
+        initialStressFeedback.textContent = '开始前，可以选一下此刻的压力，也可以直接跳过。';
+        document.querySelector('#initialStressCheckin').scrollIntoView({ block: 'center', behavior: 'auto' });
+        initialStressOptions[0]?.focus({ preventScroll: true });
+        return;
+    }
+
     stopSpeech();
     window.clearTimeout(greetingTimer);
     greetingActive = false;
@@ -979,14 +1045,17 @@ form.addEventListener('submit', async (event) => {
     voicePreview.disabled = true;
     sendButton.setAttribute('aria-label', '正在回复');
     draftStatus.textContent = '正在认真回应…';
-    chatStatus.textContent = '正在回应';
+    chatStatus.textContent = '正在连接';
+    chatStatus.dataset.state = 'connecting';
     announcement.textContent = '';
     voiceNotice.textContent = '';
     followMessages = true;
-    appendMessage('user', text);
+    const reuseVisibleUserMessage = retryingVisibleMessage;
+    retryingVisibleMessage = false;
+    if (!reuseVisibleUserMessage) appendMessage('user', text);
     input.value = '';
     resizeInput();
-    const thinking = appendMessage('assistant', '正在理解你此刻最在意的部分…');
+    const thinking = appendMessage('assistant', '正在连接陪伴服务…');
     thinking.classList.add('pending');
     thinking.setAttribute('aria-busy', 'true');
     startWaitingProgress(thinking);
@@ -1023,6 +1092,11 @@ form.addEventListener('submit', async (event) => {
             signal: controller.signal,
         });
         if (!response.ok) throw new Error('Chat request failed');
+        if (response.headers.get('X-Chat-Mode') === 'safety') {
+            supportMode = true;
+            setSafetyPresentation(true);
+            chatStatus.textContent = '安全支持模式';
+        }
         const { data, streamed } = await readChatResponse(response, thinking);
         if (typeof data.reply !== 'string' || !data.reply.trim()) {
             throw new Error('Empty chat response');
@@ -1031,13 +1105,13 @@ form.addEventListener('submit', async (event) => {
         thinking.classList.remove('pending');
         thinking.dataset.provider = data.provider || (data.risk ? 'safety' : 'fallback');
         supportMode = Boolean(data.risk);
+        setSafetyPresentation(supportMode);
         thinking.classList.toggle('risk', supportMode);
         lastReply = data.reply;
         if (data.memory) conversationMemory = cleanMemory(data.memory);
         if (typeof data.action_status === 'string') actionStatus = data.action_status;
         if (!supportMode) {
             riskState = '';
-            chatPanel?.classList.remove('is-safety');
             updateDialogueStage(data.stage, actionStatus);
         }
         revealing = true;
@@ -1057,7 +1131,7 @@ form.addEventListener('submit', async (event) => {
             }
         } else {
             renderActionCard(data.action_card);
-            if (actionStatus === 'completed') renderCompletionSummary();
+            if (actionStatus === 'completed' || data.ended) renderCompletionSummary();
             setConversationEnded(Boolean(data.ended));
             if (!data.ended) conversationChoices.hidden = false;
             saveProgress();
@@ -1067,6 +1141,7 @@ form.addEventListener('submit', async (event) => {
             ? '安全支持模式'
             : (providerLabels[data.provider] || '在这里陪你');
         chatStatus.dataset.provider = supportMode ? 'safety' : (data.provider || 'unknown');
+        chatStatus.dataset.state = 'online';
         announcement.textContent = data.reply;
         if (data.interrupted) {
             chatStatus.textContent = '回复暂时中断';
@@ -1090,11 +1165,26 @@ form.addEventListener('submit', async (event) => {
             thinking.querySelector('.bubble').textContent = notice;
         }
         chatStatus.textContent = '连接暂时中断';
+        chatStatus.dataset.state = 'offline';
         announcement.textContent = notice;
         if (!input.value.trim()) {
             input.value = text;
             resizeInput();
         }
+        const retryButton = document.createElement('button');
+        retryButton.type = 'button';
+        retryButton.className = 'message-retry';
+        retryButton.textContent = '重新连接';
+        retryButton.addEventListener('click', () => {
+            if (pending) return;
+            thinking.remove();
+            input.value = text;
+            retryingVisibleMessage = true;
+            resizeInput();
+            form.requestSubmit();
+        });
+        thinking.classList.add('has-retry');
+        thinking.append(retryButton);
     } finally {
         window.clearTimeout(timeout);
         controller.abort();
@@ -1102,7 +1192,8 @@ form.addEventListener('submit', async (event) => {
         pending = false;
         revealing = false;
         sendButton.disabled = conversationEnded;
-        voicePreview.disabled = false;
+        voicePreview.disabled = supportMode;
+        voiceToggle.disabled = supportMode;
         sendButton.setAttribute('aria-label', '发送消息');
         updateDraft();
         thinking.classList.remove('pending');
@@ -1126,11 +1217,29 @@ function updateDraft() {
 }
 
 input.addEventListener('input', () => {
+    if (input.value.trim()) revealInitialStressCheckin();
     resizeInput();
     updateCompanion();
 });
 input.addEventListener('focus', updateCompanion);
 input.addEventListener('blur', updateCompanion);
+
+function updateChatViewport() {
+    const viewport = window.visualViewport;
+    if (!viewport || !window.matchMedia('(max-width: 800px)').matches) {
+        document.documentElement.style.removeProperty('--chat-viewport');
+        document.body.classList.remove('keyboard-open');
+        return;
+    }
+    document.documentElement.style.setProperty('--chat-viewport', `${Math.round(viewport.height)}px`);
+    const keyboardOpen = window.innerHeight - viewport.height > 120 && document.activeElement?.tagName === 'TEXTAREA';
+    document.body.classList.toggle('keyboard-open', keyboardOpen);
+}
+window.visualViewport?.addEventListener('resize', updateChatViewport);
+window.addEventListener('resize', updateChatViewport);
+document.addEventListener('focusin', updateChatViewport);
+document.addEventListener('focusout', () => requestAnimationFrame(updateChatViewport));
+updateChatViewport();
 input.addEventListener('keydown', (event) => {
     // Chinese IME uses Enter to commit a candidate before sending a message.
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
@@ -1143,6 +1252,8 @@ function appendMessage(role, text) {
     if (role === 'user') {
         welcomeIntro.hidden = true;
         messages.classList.add('has-conversation');
+        chatPanel?.classList.add('has-conversation');
+        document.body.classList.add('conversation-started');
     }
     const article = document.createElement('article');
     article.className = 'message arriving ' + role;

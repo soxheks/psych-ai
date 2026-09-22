@@ -23,6 +23,7 @@ async function geometry(page) {
             gap: messages.scrollHeight - messages.scrollTop - messages.clientHeight,
             regionBottom: region.bottom, composerTop: composer.top, composerBottom: composer.bottom,
             composerHit: Boolean(hit?.closest('.composer')),
+            hitElement: hit ? `${hit.tagName}.${hit.className || ''}` : '',
             viewportHeight: innerHeight,
             horizontalOverflow: document.documentElement.scrollWidth > innerWidth,
         };
@@ -32,7 +33,7 @@ async function geometry(page) {
 async function assertBoundaries(page, label) {
     const data = await geometry(page);
     assert(data.regionBottom <= data.composerTop + 1, label + ': message region crosses composer');
-    assert(data.composerHit, label + ': animated reply paints over composer');
+    assert(data.composerHit, label + ': animated reply paints over composer: ' + JSON.stringify(data));
     assert(data.composerBottom <= data.viewportHeight + 1, label + ': composer below viewport');
     assert(!data.horizontalOverflow, label + ': horizontal overflow');
     return data;
@@ -51,9 +52,9 @@ async function assertAtBottom(page) {
         const line = range.getBoundingClientRect();
         const region = document.querySelector('#messages').getBoundingClientRect();
         const hit = document.elementFromPoint(line.x + 4, line.bottom - 3);
-        return { visible: line.top >= region.top && line.bottom <= region.bottom + 1, hit: Boolean(hit?.closest('#messages')) };
+        return { visible: line.top >= region.top && line.bottom <= region.bottom + 1, hit: Boolean(hit?.closest('#messages')), lineTop: line.top, lineBottom: line.bottom, regionTop: region.top, regionBottom: region.bottom };
     });
-    assert(tail.visible && tail.hit, 'Final reply line must be visible and not covered');
+    assert(tail.visible && tail.hit, 'Final reply line must be visible and not covered: ' + JSON.stringify(tail));
 }
 
 (async () => {
@@ -150,8 +151,8 @@ async function assertAtBottom(page) {
         const opening = await voicePage.evaluate(() => window.__voiceCalls[0]);
         assert.match(opening.text, /你好呀，我是心研同伴/);
         assert.match(opening.name, /Yaoyao/);
-        assert.equal(opening.pitch, 1.22);
-        assert.equal(opening.rate, 1.02);
+        assert.equal(opening.pitch, 1.42);
+        assert.equal(opening.rate, 1.06);
         assert.equal(await voicePage.locator('#voiceToggle').getAttribute('aria-pressed'), 'true');
         await voicePage.evaluate(() => window.__currentVoice.onend());
 
@@ -159,8 +160,8 @@ async function assertAtBottom(page) {
         await voicePage.waitForFunction(() => window.__voiceCalls.length === 2);
         const sample = await voicePage.evaluate(() => window.__voiceCalls[1]);
         assert.match(sample.name, /Yaoyao/);
-        assert.equal(sample.pitch, 1.22);
-        assert.equal(sample.rate, 1.02);
+        assert.equal(sample.pitch, 1.42);
+        assert.equal(sample.rate, 1.06);
         assert.equal(await voicePage.locator('#voiceToggle').getAttribute('aria-pressed'), 'true', 'Preview must not disable automatic reading');
         assert.equal(await voicePage.locator('.message.user').count(), 0);
         await voicePage.locator('#voicePreview').click();

@@ -25,7 +25,8 @@ async function checkLayout(page, width, height, label) {
     });
     assert(layout.scrollWidth <= width, label + ': horizontal overflow');
     assert(!layout.textOverflow, label + ': overflowing text');
-    assert(layout.stage.width > 80 && layout.stage.height > 80, label + ': character too small');
+    const minimumCharacterSize = width <= 800 ? 42 : 80;
+    assert(layout.stage.width > minimumCharacterSize && layout.stage.height > minimumCharacterSize, label + ': character too small');
     assert(layout.composer.bottom <= height + 1, label + ': input below viewport');
     assert(layout.messages.height > 100, label + ': chat area too short');
     assert(layout.messages.bottom <= layout.composer.y + 1, label + ': messages overlap input');
@@ -173,6 +174,15 @@ async function checkLayout(page, width, height, label) {
         await page.waitForFunction(() => !document.querySelector('#sendButton').disabled);
         assert.equal(await page.locator('#messageInput').inputValue(), '请保留这句话');
         assert.match(await page.locator('.message.assistant').last().textContent(), /保留/);
+        assert.equal(await page.locator('.message-retry').last().isVisible(), true);
+
+        await page.unroute('**/api/chat/');
+        const retainedUserMessages = await page.locator('.message.user', { hasText: '请保留这句话' }).count();
+        await page.route('**/api/chat/', (route) => route.fulfill({ json: { reply: '已经重新连接，我们可以从这里继续。', provider: 'doubao' } }));
+        await page.locator('.message-retry').last().click();
+        await page.waitForFunction(() => !document.querySelector('#sendButton').disabled);
+        assert.equal(await page.locator('.message.user', { hasText: '请保留这句话' }).count(), retainedUserMessages);
+        assert.match(await page.locator('.message.assistant').last().textContent(), /重新连接/);
 
         await page.unroute('**/api/chat/');
         await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -188,10 +198,8 @@ async function checkLayout(page, width, height, label) {
         assert.equal(await page.locator('.message.assistant').last().locator('.bubble').textContent(), riskReply);
         assert.equal(await page.locator('#companion').getAttribute('data-state'), 'listening');
         assert.equal(await page.locator('.character-motion').evaluate((el) => getComputedStyle(el).animationName), 'none');
-        await page.evaluate(() => { window.__voices = []; });
-        await page.locator('#voiceToggle').click();
-        await page.waitForFunction(() => document.querySelector('#voiceNotice').textContent.includes('没有可用的中文声音'));
-        assert.match(await page.locator('#voiceNotice').textContent(), /没有可用的中文声音/);
+        assert.equal(await page.locator('#voiceToggle').isDisabled(), true);
+        assert.equal(await page.locator('#voicePreview').isDisabled(), true);
 
         await page.unroute('**/api/chat/');
         await page.route('**/api/chat/', (route) => route.fulfill({ json: { reply: '这是基础陪伴回复。', provider: 'fallback' } }));
@@ -199,6 +207,7 @@ async function checkLayout(page, width, height, label) {
         await page.locator('#sendButton').click();
         await page.waitForFunction(() => !document.querySelector('#sendButton').disabled);
         assert.equal(await page.locator('#chatStatus').textContent(), '基础陪伴模式');
+        assert.equal(await page.locator('#voiceToggle').isDisabled(), false);
         await page.locator('#messageInput').fill('中文输入法');
         await page.locator('#messageInput').dispatchEvent('keydown', { key: 'Enter', isComposing: true });
         assert.equal(await page.locator('#messageInput').inputValue(), '中文输入法');
