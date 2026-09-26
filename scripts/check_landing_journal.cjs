@@ -49,8 +49,8 @@ async function noHorizontalOverflow(page, label) {
 
         await page.locator('.button-secondary').click();
         await page.locator('.page-transition.is-leaving').waitFor();
-        await page.waitForTimeout(300);
         assert.equal(await page.locator('#transitionLabel').textContent(), '打开一页心灵随笔');
+        await page.waitForTimeout(160);
         await page.screenshot({ path: path.join(output, 'page-transition.png') });
         await page.waitForURL('**/journal/');
         assert.equal(page.url(), journalURL);
