@@ -7,6 +7,11 @@ import re
 LISTEN_REQUEST = re.compile(r'只想.{0,8}(聊|说|倾诉|听)|不想.{0,8}(建议|办法|行动|任务|回答|分析)|别.{0,5}(问|催|建议)|先.{0,6}(陪|听我)|暂时.{0,5}(不做|不聊任务)')
 DISTRESS = re.compile(r'崩溃|撑不住|喘不过气|一直哭|哭了|想哭|很难受|好难受|太难受|好累|很疲惫|脑子很乱')
 ACTION_REQUEST = re.compile(r'怎么(做|开始)|如何.{0,5}(开始|做)|给我.{0,6}(建议|步骤|行动)|帮我.{0,10}(拆|计划|安排|选|找.{0,4}步骤)|(?:想|愿意|可以|打算).{0,8}(试试|行动|做一点|开始)|准备好了|可以开始|选.{0,8}(小步骤|小行动)')
+CONTROL_COMMITMENT = re.compile(
+    r'(?:能|可以)控制的(?:是|有)|'
+    r'(?:先|马上|接下来)(?:花|用)?\s*(?:\d+|[一二三四五六七八九十几]+)\s*分钟|'
+    r'(?:先|马上|接下来).{0,12}(?:检查|修改|测试|整理|复现|练习|复习|处理|准备|完成)'
+)
 CLARIFY_REQUEST = re.compile(r'帮我.{0,6}(梳理|分析|理清)|想.{0,4}(梳理|分析|理清)')
 NOT_READY = re.compile(r'还没想好|不想做|不想开始|(不|没|别|暂不).{0,5}(想做|想开始|准备好|行动|建议|开始|办法)|不要.{0,6}怎么(办|做)')
 QUESTION = re.compile(r'[^。！!；;\n？?]+[？?]')
@@ -22,7 +27,7 @@ def current_preference(message):
             preference = 'listen'
         elif CLARIFY_REQUEST.search(clause):
             preference = 'clarify'
-        elif ACTION_REQUEST.search(clause):
+        elif ACTION_REQUEST.search(clause) or CONTROL_COMMITMENT.search(clause):
             preference = 'action'
     return preference
 

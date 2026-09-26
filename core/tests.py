@@ -238,6 +238,20 @@ class GuidedConversationTests(TestCase):
             memory=ANY,
         )
 
+    @patch('core.views.generate_ai_reply', return_value=('我们就从这个十分钟动作开始。', 'doubao'))
+    def test_timeboxed_commitment_returns_action_card(self, generate):
+        response = self.client.post(reverse('chat'), {
+            'message': '我愿意现在先花10分钟加空值检查，然后跑一次测试。',
+            'scenario': 'coding',
+            'flow_stage': 'clarify',
+            'history': '[]',
+        })
+
+        payload = response.json()
+        self.assertEqual(payload['stage'], 'control')
+        self.assertIsNotNone(payload['action_card'])
+        self.assertEqual(payload['action_card']['title'], '把问题缩小一圈')
+
     @patch('core.views.generate_ai_reply')
     def test_risk_reply_stops_guided_flow(self, generate):
         response = self.client.post(reverse('chat'), {

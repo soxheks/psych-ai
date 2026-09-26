@@ -24,6 +24,17 @@ class ConversationPacingTests(SimpleTestCase):
         for message in ('我准备好了，但现在不想开始。', '帮我拆一步，不过先别给建议。'):
             self.assertEqual(choose_phase(message, memory=old), 'listen')
 
+    def test_concrete_control_and_timeboxed_commitments_advance_to_action(self):
+        for message in (
+            '我现在能控制的是加空值检查、准备备用版本。',
+            '我愿意现在先花10分钟加空值检查，然后跑一次测试。',
+            '接下来先修改这个报错。',
+        ):
+            with self.subTest(message=message):
+                self.assertEqual(choose_phase(message), 'control')
+
+        self.assertEqual(choose_phase('我今天测试时很焦虑。'), 'clarify')
+
     def test_explicit_end_is_available_without_an_action(self):
         with patch('core.views.generate_ai_reply') as generate:
             data = self.client.post(reverse('chat'), {'message': '今天先聊到这里，谢谢。'}).json()
