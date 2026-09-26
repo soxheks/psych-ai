@@ -1,6 +1,6 @@
 # 对话形象
 
-角色素材：`core/static/core/images/companion-poses.png`。
+角色原始素材：`core/static/core/images/companion-poses.png`；网页加载优化版：`core/static/core/images/companion-poses.webp`。
 参考：用户桌面的微信角色图片（白发双丸子头、星星发夹、星月抱枕）。使用内置 imagegen 生成，没有调用项目的 AI Key。
 
 ## 页面行为

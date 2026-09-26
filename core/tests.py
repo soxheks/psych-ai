@@ -3,7 +3,8 @@ import uuid
 from unittest.mock import ANY, patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.core.cache import cache
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from .ai_client import AIUnavailable, build_user_prompt
@@ -18,11 +19,13 @@ class PageTests(TestCase):
         self.assertContains(response, reverse('home'))
         self.assertContains(response, reverse('journal'))
         self.assertContains(response, '心研同伴')
+        self.assertContains(response, 'rel="icon"')
         self.assertContains(response, 'landing.js?v=2')
         self.assertContains(response, 'sound-effects.js?v=3')
         self.assertContains(response, '关闭页面声音')
         self.assertContains(response, '体验数据收集中')
         self.assertNotContains(response, '<strong>0</strong>')
+        self.assertEqual(response['X-Frame-Options'], 'SAMEORIGIN')
 
     def test_chat_page_is_available_at_chat_path(self):
         response = self.client.get(reverse('home'))
@@ -32,6 +35,7 @@ class PageTests(TestCase):
         self.assertContains(response, 'initialStressScale')
         self.assertContains(response, 'completionSummaryTemplate')
         self.assertContains(response, '匿名贡献本次结果')
+        self.assertContains(response, '本次对话要点')
         self.assertContains(response, '我感到被理解')
         self.assertContains(response, '建议容易执行')
         self.assertContains(response, '本次陪伴有帮助')
@@ -54,7 +58,7 @@ class PageTests(TestCase):
         self.assertIn('public', journal['Cache-Control'])
         self.assertEqual(worker['Content-Type'], 'application/javascript')
         self.assertEqual(worker['Service-Worker-Allowed'], '/')
-        self.assertContains(worker, 'mindmate-pages-v14')
+        self.assertContains(worker, 'mindmate-pages-v15')
 
     def test_csrf_endpoint_returns_a_token(self):
         response = self.client.get(reverse('csrf'))
@@ -72,6 +76,9 @@ class PageTests(TestCase):
 
 
 class GuidedConversationTests(TestCase):
+    def tearDown(self):
+        cache.clear()
+
     @patch('core.views.stream_ai_reply')
     def test_streaming_chat_emits_incremental_events_and_guarded_final_reply(self, stream):
         stream.return_value = iter([
@@ -117,6 +124,73 @@ class GuidedConversationTests(TestCase):
         self.assertEqual(events[-1]['provider'], 'safety')
         self.assertEqual(response['X-Chat-Mode'], 'safety')
         stream.assert_not_called()
+
+    @patch('core.views.stream_ai_reply')
+    def test_euphemistic_crisis_language_enters_safety_mode(self, stream):
+        response = self.client.post(reverse('chat'), {
+            'message': '我有时觉得永远睡过去会更好。',
+            'stream': 'true',
+        })
+
+        events = [
+            json.loads(line)
+            for line in b''.join(response.streaming_content).decode('utf-8').splitlines()
+        ]
+        self.assertTrue(events[-1]['risk'])
+        self.assertEqual(events[-1]['provider'], 'safety')
+        stream.assert_not_called()
+
+    @patch('core.views.generate_ai_reply', return_value=('谢谢你说清楚。', 'doubao'))
+    def test_clear_negation_does_not_trigger_crisis_mode(self, generate):
+        response = self.client.post(reverse('chat'), {'message': '我没有想过自杀。'})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json().get('risk', False))
+        generate.assert_called_once()
+
+    @patch('core.views.generate_ai_reply')
+    def test_server_rejects_messages_over_the_frontend_limit(self, generate):
+        response = self.client.post(reverse('chat'), {'message': '压' * 4001})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()['error'], 'message_too_long')
+        generate.assert_not_called()
+
+    @override_settings(CHAT_RATE_LIMIT_PER_MINUTE=2, CHAT_RATE_LIMIT_WINDOW_SECONDS=60)
+    @patch('core.views.generate_ai_reply', return_value=('我在听。', 'doubao'))
+    def test_chat_rate_limit_protects_the_public_provider(self, generate):
+        client_id = str(uuid.uuid4())
+        responses = [
+            self.client.post(reverse('chat'), {
+                'message': f'普通压力表达 {index}', 'client_id': client_id,
+            })
+            for index in range(3)
+        ]
+
+        self.assertEqual([response.status_code for response in responses], [200, 200, 429])
+        self.assertEqual(responses[-1].json()['error'], 'rate_limited')
+        self.assertIn('Retry-After', responses[-1])
+        self.assertEqual(generate.call_count, 2)
+
+    @patch('core.views.stream_ai_reply', return_value=iter([('我在听。', 'doubao')]))
+    def test_only_one_stream_can_run_per_session(self, stream):
+        client_id = str(uuid.uuid4())
+        first = self.client.post(reverse('chat'), {
+            'message': '第一条', 'stream': 'true', 'client_id': client_id,
+        })
+        second = self.client.post(reverse('chat'), {
+            'message': '第二条', 'stream': 'true', 'client_id': client_id,
+        })
+
+        self.assertTrue(first.streaming)
+        self.assertEqual(second.status_code, 409)
+        self.assertEqual(second.json()['error'], 'request_in_progress')
+        b''.join(first.streaming_content)
+        third = self.client.post(reverse('chat'), {
+            'message': '第三条', 'stream': 'true', 'client_id': client_id,
+        })
+        self.assertTrue(third.streaming)
+        b''.join(third.streaming_content)
 
     @patch('core.views.generate_ai_reply', return_value=('我听见这件事让你很担心。最压着你的部分是什么？', 'doubao'))
     def test_first_turn_moves_to_clarify_without_action_card(self, generate):
@@ -434,6 +508,9 @@ class OutcomeRecordTests(TestCase):
         self.assertEqual(response.context['outcome_action_rate'], 50)
         self.assertEqual(response.context['outcome_improvement_rate'], 50)
         self.assertEqual(response.context['outcome_average_change'], 1.0)
+        self.assertFalse(response.context['outcome_evidence_ready'])
+        self.assertContains(response, '小规模体验积累中')
+        self.assertContains(response, '样本不足，暂不展示')
 
     def test_invalid_stress_value_is_rejected(self):
         response = self.client.post(reverse('record_outcome'), {

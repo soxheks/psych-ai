@@ -137,15 +137,22 @@ STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_SSL_REDIRECT = not DEBUG
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SECURE_HSTS_SECONDS = int(os.environ.get('SECURE_HSTS_SECONDS', '0' if DEBUG else '3600'))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+X_FRAME_OPTIONS = 'SAMEORIGIN'
 
-# Email
-# https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
-
-MAILERS = {
-    'default': {
-        'BACKEND': 'django.core.mail.backends.console.EmailBackend',
-    },
-}
+CHAT_MESSAGE_MAX_LENGTH = int(os.environ.get('CHAT_MESSAGE_MAX_LENGTH', '4000'))
+CHAT_RATE_LIMIT_PER_MINUTE = int(os.environ.get('CHAT_RATE_LIMIT_PER_MINUTE', '12'))
+CHAT_NETWORK_RATE_LIMIT_PER_MINUTE = int(os.environ.get('CHAT_NETWORK_RATE_LIMIT_PER_MINUTE', '120'))
+CHAT_RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get('CHAT_RATE_LIMIT_WINDOW_SECONDS', '60'))
+CHAT_CONCURRENT_TIMEOUT_SECONDS = int(os.environ.get('CHAT_CONCURRENT_TIMEOUT_SECONDS', '55'))
+OUTCOME_MINIMUM_SAMPLE = int(os.environ.get('OUTCOME_MINIMUM_SAMPLE', '10'))
 
 
 # AI chat provider

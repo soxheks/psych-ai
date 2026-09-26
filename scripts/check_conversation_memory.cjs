@@ -65,6 +65,11 @@ const baseURL = process.env.PREVIEW_URL || 'http://127.0.0.1:8000';
         assert.equal(await page.evaluate(() => window.testEnd), false, 'first sentence must be visible before stream ends');
         await page.waitForFunction(() => !document.querySelector('#sendButton').disabled);
         assert.equal(await page.locator('.message.assistant .bubble').last().textContent(), '我听见你说周五要交演示。我们可以慢慢说。');
+        assert.equal(await page.locator('#memorySummary').getAttribute('hidden'), null, 'memory summary should be available after the first reply');
+        await page.locator('.composer-data-settings summary').click();
+        assert.match(await page.locator('#memoryConcern').inputValue(), /数据库/);
+        await page.locator('#memoryConcern').fill('周五演示，数据库由我负责。');
+        await page.locator('#memoryConcern').press('Tab');
 
         for (let index = 0; index < 7; index++) {
             await input.fill(`继续聊聊第${index}个细节。`);
@@ -73,7 +78,7 @@ const baseURL = process.env.PREVIEW_URL || 'http://127.0.0.1:8000';
         }
         const last = await page.evaluate(() => window.testRequests.at(-1));
         assert(!last.history.includes('我负责数据库'), 'original user turn should be outside the recent window');
-        assert(JSON.parse(last.memory).concern.includes('我负责数据库'), 'bounded memory should preserve the original concern');
+        assert.equal(JSON.parse(last.memory).concern, '周五演示，数据库由我负责。', 'edited memory should reach later requests');
         assert.equal(await page.evaluate(() => localStorage.getItem('mindmate-chat-progress-v1')), null);
 
         await page.evaluate(() => { window.testIncomplete = true; });
@@ -101,7 +106,7 @@ const baseURL = process.env.PREVIEW_URL || 'http://127.0.0.1:8000';
         await page.waitForFunction(() => !document.querySelector('#sendButton').disabled);
         assert.equal(await page.evaluate(() => window.testRequests[0].memory), '{}');
         assert.deepEqual(errors, []);
-        console.log('PASS: incremental UTF-8 stream, early text, memory beyond six messages, no default storage, interrupted text preservation, crisis clearing and fresh-page isolation.');
+        console.log('PASS: incremental UTF-8 stream, visible/editable memory, memory beyond six messages, no default storage, interrupted text preservation, crisis clearing and fresh-page isolation.');
     } finally {
         await browser.close();
     }

@@ -7,6 +7,7 @@
     <meta name="theme-color" content="#f5faf8">
     <meta name="description" content="心研同伴，为高校学生提供学业压力下的情绪倾听与温柔陪伴。">
     <title>心研同伴 | 把心情放在这里</title>
+    <link rel="icon" href="{% static 'core/icons/message-circle-heart.svg' %}" type="image/svg+xml">
     <link rel="preload" as="image" href="{% static 'core/images/landing-room.jpg' %}" fetchpriority="high">
     <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=4">
     <link rel="stylesheet" href="{% static 'core/css/landing.css' %}?v=8">
@@ -85,18 +86,23 @@
         <section class="outcome-section" aria-labelledby="outcomeTitle">
             <div class="outcome-heading">
                 <div>
-                    <p>真实、匿名、可撤回</p>
-                    <h2 id="outcomeTitle">陪伴带来的小变化</h2>
+                    <p>真实、匿名、本次会话内可撤回</p>
+                    <h2 id="outcomeTitle">匿名陪伴体验记录</h2>
                 </div>
                 <p>仅汇总用户主动同意贡献的结构化数据，不保存倾诉原文，也不把变化解释为医疗效果。</p>
             </div>
-            {% if outcome_total %}<div class="outcome-metrics">
+            {% if outcome_total %}<div class="evidence-status{% if outcome_evidence_ready %} is-ready{% endif %}">
+                <span>{% if outcome_evidence_ready %}可展示的初步样本{% else %}小规模体验积累中{% endif %}</span>
+                <p>{% if outcome_evidence_ready %}已有 {{ outcome_rated }} 份完整前后评分，仍只作为非临床的用户体验观察。{% else %}当前仅 {{ outcome_rated }} 份完整前后评分；达到 {{ outcome_minimum_sample }} 份前，不展示效果趋势结论。{% endif %}</p>
+                {% if outcome_last_date %}<time datetime="{{ outcome_last_date|date:'c' }}">数据截至 {{ outcome_last_date|date:'Y-m-d' }}</time>{% endif %}
+            </div>
+            <div class="outcome-metrics">
                 <article><span>已记录体验</span><strong>{{ outcome_total }}</strong><small>份匿名记录</small></article>
                 <article><span>完整前后评分</span><strong>{{ outcome_rated }}</strong><small>共 {{ outcome_total }} 份记录，未配对记录不计入变化</small></article>
                 <article><span>完成小行动</span><strong>{{ outcome_completed }}</strong><small>自愿反馈中的完成次数，不代表全部访客</small></article>
-                <article><span>平均压力变化</span><strong>{% if outcome_rated %}{{ outcome_average_change }}{% else %}--{% endif %}</strong><small>{% if outcome_rated %}分，正数表示降低{% else %}需要真实前后测{% endif %}</small></article>
+                <article><span>平均压力变化</span><strong>{% if outcome_evidence_ready %}{{ outcome_average_change }}{% else %}--{% endif %}</strong><small>{% if outcome_evidence_ready %}分，正数表示降低{% else %}样本不足，暂不展示{% endif %}</small></article>
             </div>
-            <p class="outcome-note">{% if outcome_rated %}在 {{ outcome_rated }} 份完整前后评分中：压力降低 {{ outcome_improved }} 份，不变 {{ outcome_unchanged }} 份，上升 {{ outcome_increased }} 份。{% else %}还没有完整的前后评分，暂时无法比较压力变化。{% endif %} 这是自愿记录的当次主观感受，不是临床量表，也不能证明变化由 AI 引起。记录数不等于独立人数。</p>{% else %}
+            <p class="outcome-note">{% if outcome_evidence_ready %}在 {{ outcome_rated }} 份完整前后评分中：压力降低 {{ outcome_improved }} 份，不变 {{ outcome_unchanged }} 份，上升 {{ outcome_increased }} 份。{% elif outcome_rated %}已收到前后评分，但样本数尚不足以形成趋势判断。{% else %}还没有完整的前后评分，暂时无法比较压力变化。{% endif %} 这是自愿记录的当次主观感受，不是临床量表，也不能证明变化由 AI 引起。记录数不等于独立人数。</p>{% else %}
             <div class="outcome-empty" role="status">
                 <span aria-hidden="true"></span>
                 <div><strong>体验数据收集中</strong><p>目前还没有用户主动同意贡献的匿名记录。我们只展示真实数据，不用示例数字填充结果。</p></div>

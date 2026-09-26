@@ -1,8 +1,12 @@
 import json
+import hashlib
 import re
+import time
 import uuid
 
-from django.db.models import Avg, F
+from django.conf import settings
+from django.core.cache import cache
+from django.db.models import Avg, F, Max, Min
 from django.http import JsonResponse, StreamingHttpResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import render
@@ -41,6 +45,21 @@ RISK_WORDS = (
     '伤害别人',
     '杀人',
 )
+RISK_PATTERNS = tuple(re.compile(pattern) for pattern in (
+    r'不想(?:再)?醒来',
+    r'永远睡(?:着|过去)',
+    r'(?:消失|离开这个世界)(?:会不会|是不是|就)?(?:更|比较)?好',
+    r'活着(?:真)?(?:没|没有)意思',
+    r'(?:真的)?撑不下去',
+    r'不想再撑',
+    r'(?:想|准备|打算).{0,8}(?:一了百了|结束一切|从楼上跳|让自己消失)',
+    r'死了(?:就|也)?算了',
+))
+RISK_NEGATION_ONLY = re.compile(
+    r'^\s*(?:我)?(?:没有|没|从没|从未|不会|并不)(?:真的)?'
+    r'(?:想过|想|打算)?(?:自杀|轻生|伤害自己|自残|想死)'
+    r'[\s。！？.!?]*$'
+)
 
 RISK_STATES = {'active', 'supported'}
 CONVERSATION_INTENTS = {'stay', 'lighter', 'end'}
@@ -58,7 +77,7 @@ COMPLETED_RESTART_PATTERNS = (
 
 
 
-@cache_control(public=True, max_age=300, s_maxage=3600, stale_while_revalidate=86400)
+@cache_control(public=True, max_age=60, s_maxage=60, stale_while_revalidate=120)
 def landing(request):
     return render(request, 'core/landing.html', outcome_summary())
 
@@ -110,7 +129,14 @@ def chat(request):
         data = {'reply': '我在这里。你可以先用一句话说说：最近最压着你的那件学业相关的事是什么？'}
         return stream_static_response(data) if wants_stream else JsonResponse(data)
 
-    if any(word in message for word in RISK_WORDS):
+    max_length = int(getattr(settings, 'CHAT_MESSAGE_MAX_LENGTH', 4000))
+    if len(message) > max_length:
+        return chat_error(
+            f'这段话有些长，请先保留最想说的 {max_length} 个字以内，我会认真读。',
+            'message_too_long', 400,
+        )
+
+    if detects_immediate_risk(message):
         data = build_safety_response('initial')
         return stream_static_response(data) if wants_stream else JsonResponse(data)
 
@@ -128,26 +154,61 @@ def chat(request):
         data['memory'] = remember(memory, message, history, data['reply'], conversation_intent)
         return stream_static_response(data) if wants_stream else JsonResponse(data)
 
+    client_id, network_id = chat_client_ids(request)
+    if client_id == network_id:
+        allowed, retry_after = consume_chat_quota(
+            network_id,
+            limit=int(getattr(settings, 'CHAT_NETWORK_RATE_LIMIT_PER_MINUTE', 120)),
+            namespace='network',
+        )
+    else:
+        allowed, retry_after = consume_chat_quota(client_id)
+        if allowed:
+            allowed, retry_after = consume_chat_quota(
+                network_id,
+                limit=int(getattr(settings, 'CHAT_NETWORK_RATE_LIMIT_PER_MINUTE', 120)),
+                namespace='network',
+            )
+    if not allowed:
+        response = chat_error(
+            '你说的话我都想认真接住。请稍等一会儿再继续，刚才的内容还保留在输入框里。',
+            'rate_limited', 429,
+        )
+        response['Retry-After'] = str(retry_after)
+        return response
+
+    lock_key = f'mindmate:chat-lock:{client_id}'
+    lock_timeout = int(getattr(settings, 'CHAT_CONCURRENT_TIMEOUT_SECONDS', 55))
+    if not cache.add(lock_key, '1', timeout=lock_timeout):
+        return chat_error(
+            '上一条回复还在准备中，请等它完成后再继续。',
+            'request_in_progress', 409,
+        )
+
     phase = choose_phase(message, action_status, memory)
 
     if wants_stream:
         return stream_model_response(
             message, scenario, history, phase, selected_action, action_status, memory,
+            lock_key=lock_key,
         )
 
     try:
-        reply, provider = generate_ai_reply(
-            message,
-            scenario,
-            history=history,
-            phase=phase,
-            selected_action=selected_action,
-            action_status=action_status,
-            memory=memory,
-        )
-    except AIUnavailable:
-        reply = build_supportive_reply(message, scenario, phase, selected_action, action_status)
-        provider = 'fallback'
+        try:
+            reply, provider = generate_ai_reply(
+                message,
+                scenario,
+                history=history,
+                phase=phase,
+                selected_action=selected_action,
+                action_status=action_status,
+                memory=memory,
+            )
+        except AIUnavailable:
+            reply = build_supportive_reply(message, scenario, phase, selected_action, action_status)
+            provider = 'fallback'
+    finally:
+        cache.delete(lock_key)
 
     action_card = build_action_card(scenario, selected_action) if phase == 'control' else None
     guard = ReplyGuard(message, history, phase, selected_action, action_status, memory, action_card)
@@ -182,6 +243,55 @@ def stream_static_response(data):
     response = configure_stream_response(events())
     response['X-Chat-Mode'] = 'safety' if data.get('risk') else 'guided'
     return response
+
+
+def chat_error(message, code, status):
+    response = JsonResponse({'error': code, 'message': message}, status=status)
+    response['Cache-Control'] = 'no-store'
+    return response
+
+
+def detects_immediate_risk(message):
+    normalized = re.sub(r'\s+', '', message)
+    if RISK_NEGATION_ONLY.fullmatch(normalized):
+        return False
+    return any(word in normalized for word in RISK_WORDS) or any(
+        pattern.search(normalized) for pattern in RISK_PATTERNS
+    )
+
+
+def chat_client_ids(request):
+    raw_client_id = request.POST.get('client_id', '').strip()
+    try:
+        client_identity = f'client:{uuid.UUID(raw_client_id)}'
+    except (ValueError, AttributeError):
+        client_identity = ''
+    network_identity = '|'.join((
+        request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
+        or request.META.get('REMOTE_ADDR', 'anonymous'),
+        request.META.get('HTTP_USER_AGENT', '')[:200],
+    ))
+    network_id = hashlib.sha256(f'network:{network_identity}'.encode('utf-8')).hexdigest()[:24]
+    client_id = hashlib.sha256(client_identity.encode('utf-8')).hexdigest()[:24] if client_identity else network_id
+    return client_id, network_id
+
+
+def consume_chat_quota(client_id, limit=None, namespace='client'):
+    limit = max(1, int(limit or getattr(settings, 'CHAT_RATE_LIMIT_PER_MINUTE', 12)))
+    window = max(10, int(getattr(settings, 'CHAT_RATE_LIMIT_WINDOW_SECONDS', 60)))
+    now = int(time.time())
+    bucket = now // window
+    key = f'mindmate:chat-rate:{namespace}:{client_id}:{bucket}'
+    if cache.add(key, 1, timeout=window + 2):
+        count = 1
+    else:
+        try:
+            count = cache.incr(key)
+        except ValueError:
+            cache.set(key, 1, timeout=window + 2)
+            count = 1
+    retry_after = window - (now % window)
+    return count <= limit, retry_after
 
 
 class ReplyGuard:
@@ -268,7 +378,7 @@ class ReplyGuard:
         return emitted
 
 
-def stream_model_response(message, scenario, history, phase, selected_action, action_status, memory):
+def stream_model_response(message, scenario, history, phase, selected_action, action_status, memory, lock_key=''):
     action_card = build_action_card(scenario, selected_action) if phase == 'control' else None
     status_labels = {
         'listen': '正在认真听你说',
@@ -324,7 +434,14 @@ def stream_model_response(message, scenario, history, phase, selected_action, ac
             memory=remember(memory, message, history, reply),
         )
 
-    return configure_stream_response(events())
+    def guarded_events():
+        try:
+            yield from events()
+        finally:
+            if lock_key:
+                cache.delete(lock_key)
+
+    return configure_stream_response(guarded_events())
 
 
 @require_POST
@@ -407,6 +524,8 @@ def outcome_summary():
     rated_count = rated.count()
     improved = rated.filter(final_stress__lt=F('initial_stress')).count()
     average_change = rated.aggregate(value=Avg(F('initial_stress') - F('final_stress')))['value']
+    dates = records.aggregate(first=Min('created_at'), last=Max('created_at'))
+    minimum_sample = max(1, int(getattr(settings, 'OUTCOME_MINIMUM_SAMPLE', 10)))
     return {
         'outcome_total': total,
         'outcome_completed': completed,
@@ -419,6 +538,10 @@ def outcome_summary():
         'outcome_action_rate': round(completed / total * 100) if total else None,
         'outcome_improvement_rate': round(improved / rated_count * 100) if rated_count else None,
         'outcome_average_change': round(float(average_change), 1) if average_change is not None else None,
+        'outcome_evidence_ready': rated_count >= minimum_sample,
+        'outcome_minimum_sample': minimum_sample,
+        'outcome_first_date': dates['first'],
+        'outcome_last_date': dates['last'],
     }
 
 

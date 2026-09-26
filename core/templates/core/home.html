@@ -6,9 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#f2f6f3">
     <title>心研同伴 | 留一点时间给自己</title>
-    <link rel="preload" as="image" href="{% static 'core/images/companion-poses.png' %}">
+    <link rel="icon" href="{% static 'core/icons/message-circle-heart.svg' %}" type="image/svg+xml">
+    <link rel="preload" as="image" type="image/webp" href="{% static 'core/images/companion-poses.webp' %}">
     <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=4">
-    <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=guided-flow-11">
+    <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=guided-flow-12">
     <script defer src="{% static 'core/js/sound-effects.js' %}?v=3"></script>
     <script defer src="{% static 'core/js/page-transition.js' %}?v=4"></script>
 </head>
@@ -195,7 +196,7 @@
                     </div>
                     <button id="resumeConversation" class="resume-conversation" type="button" hidden>我想继续聊聊</button>
                     <details class="data-settings composer-data-settings">
-                        <summary>数据与进度设置</summary>
+                        <summary>数据、进度与对话要点</summary>
                         <div class="data-settings-body">
                             <label class="data-choice" for="progressConsent">
                                 <input id="progressConsent" type="checkbox">
@@ -203,8 +204,17 @@
                             </label>
                             <label class="data-choice" for="metricsConsent">
                                 <input id="metricsConsent" type="checkbox">
-                                <span><strong>匿名贡献本次效果数据</strong><small>仅记录场景、前后压力、行动完成和可选体验反馈，不包含对话原文；取消后删除本次记录。</small></span>
+                                <span><strong>匿名贡献本次效果数据</strong><small>仅记录场景、前后压力、行动完成和可选体验反馈，不包含对话原文；当前浏览器会话内可撤回。</small></span>
                             </label>
+                            <section id="memorySummary" class="memory-summary" aria-labelledby="memorySummaryTitle" hidden>
+                                <header>
+                                    <div><strong id="memorySummaryTitle">本次对话要点</strong><small>AI 会依据这些要点避免反复追问</small></div>
+                                    <button id="clearConversationMemory" type="button">清除要点</button>
+                                </header>
+                                <label for="memoryConcern"><span>主要困扰</span><input id="memoryConcern" type="text" maxlength="240"></label>
+                                <label for="memoryFacts"><span>已确认要点</span><textarea id="memoryFacts" rows="2" maxlength="1200" placeholder="每行一点"></textarea></label>
+                                <p id="memoryStatus" role="status">修改后仅影响后续对话；默认刷新即清除。</p>
+                            </section>
                             <div class="data-settings-actions">
                                 <button id="clearLocalProgress" type="button" hidden>清除本地记录</button>
                                 <p id="privacyStatus" role="status"></p>
@@ -362,7 +372,7 @@
             <div class="completion-consent">
                 <label class="completion-consent-choice">
                     <input class="completion-metrics-consent" type="checkbox">
-                    <span><strong>匿名贡献本次结果</strong><small>仅上传场景、前后评分、行动完成情况和以上体验反馈，不包含对话原文；取消后删除本次记录。</small></span>
+                    <span><strong>匿名贡献本次结果</strong><small>仅上传场景、前后评分、行动完成情况和以上体验反馈，不包含对话原文；当前浏览器会话内可撤回。</small></span>
                 </label>
                 <p class="completion-consent-status" role="status">默认关闭，未同意时内容仅保留在当前页面。</p>
             </div>
@@ -370,6 +380,6 @@
         </section>
     </template>
     {% include 'core/_page_transition.html' %}
-    <script src="{% static 'core/js/home.js' %}?v=guided-flow-16"></script>
+    <script src="{% static 'core/js/home.js' %}?v=guided-flow-17"></script>
 </body>
 </html>

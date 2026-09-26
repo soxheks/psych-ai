@@ -36,6 +36,11 @@ const conversationChoices = document.querySelector('#conversationChoices');
 const conversationIntentButtons = document.querySelectorAll('[data-conversation-intent]');
 const resumeConversation = document.querySelector('#resumeConversation');
 const chatPanel = document.querySelector('.chat-panel');
+const memorySummary = document.querySelector('#memorySummary');
+const memoryConcern = document.querySelector('#memoryConcern');
+const memoryFacts = document.querySelector('#memoryFacts');
+const memoryStatus = document.querySelector('#memoryStatus');
+const clearConversationMemory = document.querySelector('#clearConversationMemory');
 const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 const speech = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window
@@ -45,6 +50,7 @@ const PROGRESS_KEY = 'mindmate-chat-progress-v1';
 const PROGRESS_CONSENT_KEY = 'mindmate-progress-consent-v1';
 const METRICS_CONSENT_KEY = 'mindmate-metrics-consent-v2';
 const OUTCOME_ID_KEY = 'mindmate-outcome-id-v2';
+const CHAT_CLIENT_ID_KEY = 'mindmate-chat-client-v1';
 
 function readCookie(name) {
     const prefix = `${name}=`;
@@ -126,6 +132,9 @@ function createEventId() {
     return `${value.slice(0, 8)}-${value.slice(8, 12)}-${value.slice(12, 16)}-${value.slice(16, 20)}-${value.slice(20)}`;
 }
 
+const chatClientId = readSession(CHAT_CLIENT_ID_KEY) || createEventId();
+writeSession(CHAT_CLIENT_ID_KEY, chatClientId);
+
 let activeScenario = 'competition';
 let pending = false;
 let revealing = false;
@@ -186,6 +195,31 @@ function cleanMemory(value) {
         })).filter((item) => item.question && item.answer) : [],
         preference: ['listen', 'clarify', 'action'].includes(value.preference) ? value.preference : '',
     };
+}
+
+function updateMemorySummary({ syncFields = true, announce = false } = {}) {
+    if (!memorySummary) return;
+    const memory = cleanMemory(conversationMemory);
+    const hasVisibleMemory = Boolean(memory.concern || memory.facts.length);
+    memorySummary.hidden = !hasVisibleMemory;
+    if (syncFields) {
+        memoryConcern.value = memory.concern || '';
+        memoryFacts.value = memory.facts.join('\n');
+    }
+    if (hasVisibleMemory) {
+        memoryStatus.textContent = '修改后仅影响后续对话；默认刷新即清除。';
+        if (announce) announcement.textContent = '已更新本次对话要点。';
+    }
+}
+
+function applyMemoryEdits() {
+    conversationMemory = cleanMemory({
+        ...conversationMemory,
+        concern: memoryConcern?.value || '',
+        facts: (memoryFacts?.value || '').split(/\r?\n/).map((item) => item.trim()).filter(Boolean),
+    });
+    updateMemorySummary({ announce: true });
+    saveProgress();
 }
 
 const stageLabels = {
@@ -304,8 +338,8 @@ async function saveOutcome({ withdrawn = false } = {}) {
             setPrivacyStatus('本次匿名数据已删除。');
             setCompletionConsentStatus('本次匿名记录已删除，后续填写只保留在当前页面。');
         } else {
-            setPrivacyStatus('已匿名记录本次的结构化结果，不包含对话原文。');
-            setCompletionConsentStatus('已匿名保存结构化结果，不包含对话原文。');
+            setPrivacyStatus('已匿名记录本次体验数据，不包含对话原文。');
+            setCompletionConsentStatus('已匿名保存本次体验数据，不包含对话原文。');
         }
     } catch {
         const notice = withdrawn ? '暂未删除成功，请重新开启后关闭匿名贡献以重试。' : '匿名数据暂未保存，当前对话不受影响。';
@@ -327,7 +361,7 @@ function syncMetricsControls() {
     });
     document.querySelectorAll('.completion-consent-status').forEach((status) => {
         status.textContent = metricsEnabled
-            ? '已开启匿名贡献，以上结构化结果会自动更新。'
+            ? '已开启匿名贡献，以上体验结果会自动更新。'
             : '默认关闭，未同意时内容仅保留在当前页面。';
     });
 }
@@ -633,6 +667,7 @@ function enterSafetyMode(data) {
     selectedAction = '';
     actionStatus = '';
     conversationMemory = {};
+    updateMemorySummary();
     conversationHistory.length = 0;
     completionSummaryRendered = false;
     setSafetyPresentation(true);
@@ -678,6 +713,7 @@ function restoreProgress() {
     selectedAction = typeof saved.selectedAction === 'string' ? saved.selectedAction.slice(0, 500) : '';
     actionStatus = validStatuses.has(saved.actionStatus) ? saved.actionStatus : '';
     conversationMemory = cleanMemory(saved.memory);
+    updateMemorySummary();
     initialStress = [1, 2, 3, 4, 5].includes(saved.initialStress) ? saved.initialStress : null;
     finalStress = [1, 2, 3, 4, 5].includes(saved.finalStress) ? saved.finalStress : null;
     scenarios.forEach((button) => {
@@ -837,6 +873,15 @@ clearLocalProgress?.addEventListener('click', () => {
     progressConsent.checked = false;
     writeStorage(PROGRESS_CONSENT_KEY, 'false');
     removeSavedProgress('已清除这台设备上的对话进度，当前页面仍可继续使用。');
+});
+
+memoryConcern?.addEventListener('change', applyMemoryEdits);
+memoryFacts?.addEventListener('change', applyMemoryEdits);
+clearConversationMemory?.addEventListener('click', () => {
+    conversationMemory = {};
+    updateMemorySummary();
+    saveProgress();
+    announcement.textContent = '已清除 AI 提取的对话要点；屏幕上的最近对话仍会作为当前上下文。';
 });
 
 conversationIntentButtons.forEach((button) => {
@@ -1071,6 +1116,7 @@ form.addEventListener('submit', async (event) => {
         conversationHistory.push({ role: 'user', content: text });
         const body = new URLSearchParams({
             message: text,
+            client_id: chatClientId,
             scenario: activeScenario,
             flow_stage: flowStage,
             selected_action: selectedAction,
@@ -1091,7 +1137,13 @@ form.addEventListener('submit', async (event) => {
             body,
             signal: controller.signal,
         });
-        if (!response.ok) throw new Error('Chat request failed');
+        if (!response.ok) {
+            let payload = {};
+            try { payload = await response.json(); } catch { /* The generic message below remains available. */ }
+            const requestError = new Error('Chat request failed');
+            requestError.userMessage = typeof payload.message === 'string' ? payload.message : '';
+            throw requestError;
+        }
         if (response.headers.get('X-Chat-Mode') === 'safety') {
             supportMode = true;
             setSafetyPresentation(true);
@@ -1108,7 +1160,10 @@ form.addEventListener('submit', async (event) => {
         setSafetyPresentation(supportMode);
         thinking.classList.toggle('risk', supportMode);
         lastReply = data.reply;
-        if (data.memory) conversationMemory = cleanMemory(data.memory);
+        if (data.memory) {
+            conversationMemory = cleanMemory(data.memory);
+            updateMemorySummary();
+        }
         if (typeof data.action_status === 'string') actionStatus = data.action_status;
         if (!supportMode) {
             riskState = '';
@@ -1156,9 +1211,9 @@ form.addEventListener('submit', async (event) => {
         if (conversationHistory.at(-1)?.role === 'user' && conversationHistory.at(-1)?.content === text) {
             conversationHistory.pop();
         }
-        const notice = error.name === 'AbortError'
+        const notice = error.userMessage || (error.name === 'AbortError'
             ? '这次回应等得有些久。你的话已经保留，可以稍后再试一次。'
-            : '暂时没有收到回应。你的话已经保留，可以稍后再试一次。';
+            : '暂时没有收到回应。你的话已经保留，可以稍后再试一次。');
         if (thinking.dataset.hasStreamText === 'true') {
             voiceNotice.textContent = '回复中途断开，已保留收到的内容。你的话也已保留，可以稍后再试。';
         } else {

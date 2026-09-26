@@ -11,7 +11,7 @@
     --surface-soft: #f8fbf9;
     --shadow-soft: 0 12px 30px #29493610;
     --ease: cubic-bezier(.2, .7, .2, 1);
-    --character: url('../images/companion-poses.png');
+    --character: url('../images/companion-poses.webp');
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -233,6 +233,17 @@ h2 { font-size: 20px; font-weight: 600; }
 .composer-data-settings { margin-top: 7px; }
 .composer-data-settings[open] .data-settings-body { grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: min(180px, 28vh); overflow-y: auto; }
 .composer-data-settings .data-settings-actions { grid-column: 1 / -1; }
+.memory-summary { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 12px; padding-top: 10px; border-top: 1px solid #dce6df; }
+.memory-summary[hidden] { display: none; }
+.memory-summary header { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.memory-summary header > div { display: grid; gap: 2px; }
+.memory-summary header strong { color: #486353; font-size: 10px; }
+.memory-summary header small { color: #7c8e84; font-size: 8px; line-height: 1.5; }
+.memory-summary button { min-height: 26px; padding: 0 9px; border: 1px solid #d4dfd7; border-radius: 6px; color: #64766c; background: #fff; font-size: 9px; }
+.memory-summary label { display: grid; gap: 4px; color: #62776b; font-size: 9px; }
+.memory-summary input, .memory-summary textarea { width: 100%; padding: 7px 8px; border: 1px solid #d3e0d7; border-radius: 6px; color: var(--ink); background: #fff; font: inherit; line-height: 1.5; resize: vertical; }
+.memory-summary input:focus, .memory-summary textarea:focus { outline: 2px solid #8eb5a0; outline-offset: 1px; }
+.memory-summary > p { grid-column: 1 / -1; margin: 0; color: #7b8d83; font-size: 8px; line-height: 1.5; }
 .message { display: flex; flex-shrink: 0; align-items: flex-start; gap: 11px; max-width: 94%; }
 .messages:not(.has-conversation) > .message { align-self: center; width: 100%; max-width: 560px; }
 .message.arriving { animation: message-in 320ms var(--ease) both; }
@@ -643,8 +654,10 @@ textarea::placeholder { color: #96a299; }
     .conversation-choices { gap: 5px; }
     .conversation-choices > span { width: 100%; }
     .conversation-choices button { flex: 1 1 auto; min-width: 0; padding: 0 6px; }
-    .composer-data-settings[open] .data-settings-body { grid-template-columns: 1fr; max-height: min(210px, 32vh); }
+    .composer-data-settings[open] .data-settings-body { grid-template-columns: 1fr; max-height: min(270px, 38vh); }
     .composer-data-settings .data-settings-actions { grid-column: auto; align-items: flex-start; flex-direction: column; }
+    .memory-summary { grid-column: auto; grid-template-columns: 1fr; }
+    .memory-summary header, .memory-summary > p { grid-column: auto; }
     .safety-dialog { width: calc(100% - 20px); max-height: calc(100dvh - 20px); }
     .safety-dialog-shell { max-height: calc(100dvh - 20px); }
     .safety-dialog header { grid-template-columns: 38px minmax(0, 1fr) 34px; gap: 9px; padding: 15px 14px 13px; }
@@ -675,6 +688,14 @@ textarea::placeholder { color: #96a299; }
     .has-conversation .conversation { grid-template-rows: 48px minmax(0, 1fr); }
     .has-conversation .character-stage { width: 44px; flex-basis: 44px; }
     .has-conversation .companion-name { display: none; }
+    .conversation-started .context-panel { gap: 0; padding-top: 6px; padding-bottom: 6px; }
+    .conversation-started .brand-mark { width: 30px; height: 30px; flex-basis: 30px; }
+    .conversation-started .brand h1 { font-size: 17px; }
+    .conversation-started .chat-site-nav { top: 5px; }
+    .conversation-started .chat-site-nav a,
+    .conversation-started .chat-site-nav .sound-toggle { width: 32px; height: 32px; min-height: 32px; flex-basis: 32px; }
+    .conversation-started .chat-nav-icon { width: 30px; height: 30px; }
+    .conversation-started .dialogue-path { min-height: 34px; }
     .composer { padding-top: 8px; padding-bottom: max(8px, env(safe-area-inset-bottom)); }
     .composer-heading { margin-bottom: 4px; }
     .conversation-choices > span { display: none; }
