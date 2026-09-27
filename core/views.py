@@ -110,6 +110,12 @@ def csrf(request):
     return JsonResponse({'csrfToken': get_token(request)})
 
 
+@require_GET
+@never_cache
+def health(request):
+    return JsonResponse({'status': 'ok'})
+
+
 @require_POST
 def chat(request):
     message = request.POST.get('message', '').strip()
@@ -276,9 +282,9 @@ def chat_client_ids(request):
     return client_id, network_id
 
 
-def consume_chat_quota(client_id, limit=None, namespace='client'):
+def consume_chat_quota(client_id, limit=None, namespace='client', window=None):
     limit = max(1, int(limit or getattr(settings, 'CHAT_RATE_LIMIT_PER_MINUTE', 12)))
-    window = max(10, int(getattr(settings, 'CHAT_RATE_LIMIT_WINDOW_SECONDS', 60)))
+    window = max(10, int(window or getattr(settings, 'CHAT_RATE_LIMIT_WINDOW_SECONDS', 60)))
     now = int(time.time())
     bucket = now // window
     key = f'mindmate:chat-rate:{namespace}:{client_id}:{bucket}'
@@ -463,8 +469,21 @@ def record_outcome(request):
 
     if request.POST.get('consent') != 'granted':
         return JsonResponse({'error': 'consent_required'}, status=400)
-    if session_event_id != str(event_id) and OutcomeRecord.objects.filter(event_id=event_id).exists():
+    record_exists = OutcomeRecord.objects.filter(event_id=event_id).exists()
+    if session_event_id != str(event_id) and record_exists:
         return JsonResponse({'error': 'event_mismatch'}, status=403)
+    if not record_exists:
+        network_id = chat_client_ids(request)[1]
+        allowed, retry_after = consume_chat_quota(
+            network_id,
+            limit=int(getattr(settings, 'OUTCOME_CREATE_RATE_LIMIT_PER_HOUR', 5)),
+            namespace='outcome-create',
+            window=int(getattr(settings, 'OUTCOME_RATE_LIMIT_WINDOW_SECONDS', 3600)),
+        )
+        if not allowed:
+            response = JsonResponse({'error': 'outcome_rate_limited'}, status=429)
+            response['Retry-After'] = str(retry_after)
+            return response
 
     scenario = request.POST.get('scenario', 'general').strip()
     valid_scenarios = {value for value, _ in OutcomeRecord.SCENARIOS}
@@ -517,7 +536,9 @@ def parse_stress(raw_value):
 
 
 def outcome_summary():
-    records = OutcomeRecord.objects.all()
+    # Public evidence includes only records reviewed against the controlled
+    # trial log. Self-submitted records remain available to administrators.
+    records = OutcomeRecord.objects.filter(evidence_approved=True)
     total = records.count()
     completed = records.filter(action_completed=True).count()
     rated = records.filter(initial_stress__isnull=False, final_stress__isnull=False)

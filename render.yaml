@@ -5,6 +5,7 @@ services:
     plan: free
     buildCommand: "bash build.sh"
     startCommand: "gunicorn psych_ai.wsgi:application --worker-class gthread --workers 1 --threads 8 --timeout 120 --graceful-timeout 30 --keep-alive 5"
+    healthCheckPath: /health/
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.14

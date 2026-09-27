@@ -16,23 +16,29 @@ class OutcomeRecordAdmin(admin.ModelAdmin):
     list_display = (
         'created_at', 'scenario', 'initial_stress', 'final_stress',
         'action_completed', 'understood_rating', 'actionable_rating',
-        'helpful_rating', 'return_intent_rating',
+        'helpful_rating', 'return_intent_rating', 'evidence_approved',
     )
-    list_filter = ('scenario', 'action_completed', 'created_at')
+    list_filter = ('evidence_approved', 'scenario', 'action_completed', 'created_at')
     date_hierarchy = 'created_at'
     list_per_page = 50
+    actions = None
     readonly_fields = (
         'event_id', 'scenario', 'initial_stress', 'final_stress',
         'action_completed', 'understood_rating', 'actionable_rating',
         'helpful_rating', 'return_intent_rating', 'feedback_note',
-        'created_at', 'updated_at',
+        'evidence_reviewed_at', 'created_at', 'updated_at',
     )
 
     def has_add_permission(self, request):
         return False
 
-    def has_change_permission(self, request, obj=None):
-        return False
+    def save_model(self, request, obj, form, change):
+        previous = OutcomeRecord.objects.filter(pk=obj.pk).values_list('evidence_approved', flat=True).first()
+        if obj.evidence_approved and not previous:
+            obj.evidence_reviewed_at = timezone.now()
+        elif not obj.evidence_approved:
+            obj.evidence_reviewed_at = None
+        super().save_model(request, obj, form, change)
 
     def get_urls(self):
         urls = super().get_urls()
@@ -68,6 +74,7 @@ class OutcomeRecordAdmin(admin.ModelAdmin):
         )
         return {
             'total': total,
+            'approved': queryset.filter(evidence_approved=True).count(),
             'completed': completed,
             'action_rate': round(completed / total * 100) if total else None,
             'paired': paired_count,
@@ -94,7 +101,8 @@ class OutcomeRecordAdmin(admin.ModelAdmin):
         writer = csv.writer(response)
         writer.writerow([
             '记录时间', '匿名事件ID', '场景', '开始压力', '结束压力', '行动完成',
-            '被理解评分', '建议可执行评分', '帮助程度评分', '再次使用意愿评分', '匿名建议', '完整前后测', '压力变化(开始减结束)',
+            '被理解评分', '建议可执行评分', '帮助程度评分', '再次使用意愿评分',
+            '匿名建议', '人工核验', '核验时间', '完整前后测', '压力变化(开始减结束)',
         ])
         for record in queryset.iterator():
             writer.writerow([
@@ -109,6 +117,8 @@ class OutcomeRecordAdmin(admin.ModelAdmin):
                 record.helpful_rating or '',
                 record.return_intent_rating or '',
                 self.csv_safe(record.feedback_note),
+                '是' if record.evidence_approved else '否',
+                timezone.localtime(record.evidence_reviewed_at).strftime('%Y-%m-%d %H:%M:%S') if record.evidence_reviewed_at else '',
                 '是' if record.initial_stress is not None and record.final_stress is not None else '否',
                 record.initial_stress - record.final_stress if record.initial_stress is not None and record.final_stress is not None else '',
             ])

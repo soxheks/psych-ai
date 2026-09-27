@@ -7,6 +7,7 @@ urlpatterns = [
     path('chat/', views.home, name='home'),
     path('journal/', views.journal, name='journal'),
     path('service-worker.js', views.service_worker, name='service_worker'),
+    path('health/', views.health, name='health'),
     path('api/csrf/', views.csrf, name='csrf'),
     path('api/chat/', views.chat, name='chat'),
     path('api/outcomes/', views.record_outcome, name='record_outcome'),

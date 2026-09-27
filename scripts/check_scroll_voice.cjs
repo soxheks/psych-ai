@@ -151,8 +151,8 @@ async function assertAtBottom(page) {
         const opening = await voicePage.evaluate(() => window.__voiceCalls[0]);
         assert.match(opening.text, /你好呀，我是心研同伴/);
         assert.match(opening.name, /Yaoyao/);
-        assert.equal(opening.pitch, 1.42);
-        assert.equal(opening.rate, 1.06);
+        assert.equal(opening.pitch, 1.32);
+        assert.equal(opening.rate, 1.02);
         assert.equal(await voicePage.locator('#voiceToggle').getAttribute('aria-pressed'), 'true');
         await voicePage.evaluate(() => window.__currentVoice.onend());
 
@@ -160,8 +160,8 @@ async function assertAtBottom(page) {
         await voicePage.waitForFunction(() => window.__voiceCalls.length === 2);
         const sample = await voicePage.evaluate(() => window.__voiceCalls[1]);
         assert.match(sample.name, /Yaoyao/);
-        assert.equal(sample.pitch, 1.42);
-        assert.equal(sample.rate, 1.06);
+        assert.equal(sample.pitch, 1.32);
+        assert.equal(sample.rate, 1.02);
         assert.equal(await voicePage.locator('#voiceToggle').getAttribute('aria-pressed'), 'true', 'Preview must not disable automatic reading');
         assert.equal(await voicePage.locator('.message.user').count(), 0);
         await voicePage.locator('#voicePreview').click();

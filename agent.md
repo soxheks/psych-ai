@@ -66,14 +66,8 @@ Admin URL:
 http://127.0.0.1:8000/admin/
 ```
 
-Existing superuser:
-
-```text
-Username: WN
-Password: 123456
-```
-
-Note: This password is weak and should be changed before any real deployment or shared use.
+Never store administrator passwords in this repository. Create or reset an
+administrator interactively, and use a unique password manager-generated value.
 
 ## Current Apps
 
@@ -151,8 +145,8 @@ This project includes Render deployment files:
 
 Public deployments must configure secrets as environment variables. Do not commit `ARK_API_KEY`, `.env`, or a production `SECRET_KEY`.
 
-Create or update a superuser non-interactively:
+Reset an existing administrator interactively:
 
 ```powershell
-.\.venv\Scripts\python.exe manage.py shell -c "from django.contrib.auth import get_user_model; User=get_user_model(); user, _ = User.objects.get_or_create(username='WN'); user.is_staff=True; user.is_superuser=True; user.set_password('123456'); user.save()"
+.\.venv\Scripts\python.exe manage.py changepassword <username>
 ```

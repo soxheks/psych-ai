@@ -91,6 +91,19 @@ const screenshotDir = process.env.SCREENSHOT_DIR;
         assert.match(await page.locator('#dialogueStageLabel').textContent(), /已经完成/);
         assert.equal(await page.locator('#dialogueStages li.active').count(), 0);
         await page.locator('.completion-summary').waitFor({ state: 'visible' });
+        assert.match(await page.locator('.completion-affirmation').textContent(), /值得被认真看见/);
+        assert.match(await page.locator('.completion-takeaway').textContent(), /留给下次的方法/);
+        assert.equal(await page.locator('.completion-feedback').getAttribute('open'), null, 'optional feedback should start collapsed');
+        assert.equal(await page.locator('#companion').getAttribute('data-state'), 'celebrating');
+        if (screenshotDir) {
+            fs.mkdirSync(screenshotDir, { recursive: true });
+            await page.locator('.completion-summary').scrollIntoViewIfNeeded();
+            await page.screenshot({ path: path.join(screenshotDir, 'outcome-collapsed-desktop.png') });
+            await page.setViewportSize({ width: 390, height: 844 });
+            await page.locator('.completion-summary').scrollIntoViewIfNeeded();
+            await page.screenshot({ path: path.join(screenshotDir, 'outcome-collapsed-mobile.png') });
+            await page.setViewportSize({ width: 1280, height: 800 });
+        }
         await page.locator('.completion-stress-options [data-stress="2"]').click();
         assert.match(await page.locator('.completion-result strong').textContent(), /轻了 3 分/);
         assert.equal(await page.locator('.stress-before em').textContent(), '5 分');

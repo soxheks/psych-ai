@@ -59,6 +59,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'django.middleware.csp.ContentSecurityPolicyMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -141,11 +142,29 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_SSL_REDIRECT = not DEBUG
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
-SECURE_HSTS_SECONDS = int(os.environ.get('SECURE_HSTS_SECONDS', '0' if DEBUG else '3600'))
+SECURE_HSTS_SECONDS = int(os.environ.get('SECURE_HSTS_SECONDS', '0' if DEBUG else '31536000'))
 SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
+SECURE_HSTS_PRELOAD = not DEBUG
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
-X_FRAME_OPTIONS = 'SAMEORIGIN'
+X_FRAME_OPTIONS = 'DENY'
+
+SECURE_CSP = {
+    'default-src': ["'self'"],
+    'script-src': ["'self'", "'unsafe-inline'"],
+    'style-src': ["'self'", "'unsafe-inline'"],
+    'img-src': ["'self'", 'data:', 'blob:'],
+    'font-src': ["'self'", 'data:'],
+    'connect-src': ["'self'"],
+    'media-src': ["'self'", 'blob:'],
+    'object-src': ["'none'"],
+    'frame-src': ["'none'"],
+    'frame-ancestors': ["'none'"],
+    'base-uri': ["'self'"],
+    'form-action': ["'self'"],
+}
+if not DEBUG:
+    SECURE_CSP['upgrade-insecure-requests'] = True
 
 CHAT_MESSAGE_MAX_LENGTH = int(os.environ.get('CHAT_MESSAGE_MAX_LENGTH', '4000'))
 CHAT_RATE_LIMIT_PER_MINUTE = int(os.environ.get('CHAT_RATE_LIMIT_PER_MINUTE', '12'))
@@ -153,6 +172,8 @@ CHAT_NETWORK_RATE_LIMIT_PER_MINUTE = int(os.environ.get('CHAT_NETWORK_RATE_LIMIT
 CHAT_RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get('CHAT_RATE_LIMIT_WINDOW_SECONDS', '60'))
 CHAT_CONCURRENT_TIMEOUT_SECONDS = int(os.environ.get('CHAT_CONCURRENT_TIMEOUT_SECONDS', '55'))
 OUTCOME_MINIMUM_SAMPLE = int(os.environ.get('OUTCOME_MINIMUM_SAMPLE', '10'))
+OUTCOME_CREATE_RATE_LIMIT_PER_HOUR = int(os.environ.get('OUTCOME_CREATE_RATE_LIMIT_PER_HOUR', '5'))
+OUTCOME_RATE_LIMIT_WINDOW_SECONDS = int(os.environ.get('OUTCOME_RATE_LIMIT_WINDOW_SECONDS', '3600'))
 
 
 # AI chat provider

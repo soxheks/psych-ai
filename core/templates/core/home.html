@@ -9,7 +9,7 @@
     <link rel="icon" href="{% static 'core/icons/message-circle-heart.svg' %}" type="image/svg+xml">
     <link rel="preload" as="image" type="image/webp" href="{% static 'core/images/companion-poses.webp' %}">
     <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=4">
-    <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=guided-flow-12">
+    <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=guided-flow-14">
     <script defer src="{% static 'core/js/sound-effects.js' %}?v=3"></script>
     <script defer src="{% static 'core/js/page-transition.js' %}?v=4"></script>
 </head>
@@ -309,7 +309,12 @@
                 <span class="completion-summary-icon" aria-hidden="true"><img src="{% static 'core/icons/heart-handshake.svg' %}" alt="" width="21" height="21"></span>
                 <div><small>这一刻的小结</small><h3>你已经迈出了一小步</h3></div>
             </header>
+            <p class="completion-affirmation">你愿意开始，也完成了这一步。这份进展值得被认真看见。</p>
             <p class="completion-action"></p>
+            <aside class="completion-takeaway">
+                <strong>留给下次的方法</strong>
+                <p></p>
+            </aside>
             <div class="completion-checkin">
                 <p class="completion-prompt"></p>
                 <div class="completion-stress-options" role="group" aria-label="记录行动完成后的压力程度，1分很轻，5分很重">
@@ -329,7 +334,9 @@
                 </div>
                 <p></p>
             </div>
-            <div class="completion-feedback">
+            <details class="completion-feedback completion-more">
+                <summary>愿意留下匿名体验反馈吗？ <small>完全可选</small></summary>
+                <div class="completion-feedback-body">
                 <div class="experience-rating" data-feedback-field="helpful_rating">
                     <span>这次陪伴对你有帮助吗？</span>
                     <div role="group" aria-label="本次陪伴有帮助，1到5分">
@@ -337,8 +344,6 @@
                     </div>
                 </div>
                 <p class="feedback-legend">可选 · 1 分：没有帮助，5 分：很有帮助</p>
-                <details class="completion-more">
-                    <summary>愿意再告诉我们一点吗？</summary>
                 <div class="completion-feedback-heading">
                     <strong>再留一点感受</strong>
                     <small>可选，1 分表示不符合，5 分表示非常符合</small>
@@ -367,8 +372,8 @@
                     <span>还有什么想告诉我们？</span>
                     <textarea maxlength="300" rows="2" placeholder="可选，请不要填写姓名、学号或联系方式"></textarea>
                 </label>
-                </details>
-            </div>
+                </div>
+            </details>
             <div class="completion-consent">
                 <label class="completion-consent-choice">
                     <input class="completion-metrics-consent" type="checkbox">
@@ -380,6 +385,6 @@
         </section>
     </template>
     {% include 'core/_page_transition.html' %}
-    <script src="{% static 'core/js/home.js' %}?v=guided-flow-17"></script>
+    <script src="{% static 'core/js/home.js' %}?v=guided-flow-19"></script>
 </body>
 </html>

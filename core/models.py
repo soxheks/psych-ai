@@ -24,6 +24,8 @@ class OutcomeRecord(models.Model):
     helpful_rating = models.PositiveSmallIntegerField(null=True, blank=True)
     return_intent_rating = models.PositiveSmallIntegerField(null=True, blank=True)
     feedback_note = models.CharField(max_length=300, blank=True, default='')
+    evidence_approved = models.BooleanField('已核验并纳入成效统计', default=False)
+    evidence_reviewed_at = models.DateTimeField('核验时间', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

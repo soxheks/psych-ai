@@ -149,6 +149,8 @@ let previewActive = false;
 let lastReply = openingGreeting;
 let followMessages = true;
 let greetingActive = false;
+let celebrationActive = false;
+let celebrationTimer = null;
 let greetingTimer = null;
 let lookFrame = null;
 let previousScrollTop = 0;
@@ -574,6 +576,9 @@ function renderCompletionSummary(restoredRating = null) {
     summary.querySelector('.completion-action').textContent = completedAction
         ? `你完成了：${action}`
         : '谢谢你留出这段时间照顾自己。今天可以先停在这里，不必为了结束而完成任务。';
+    summary.querySelector('.completion-takeaway p').textContent = completedAction
+        ? `把压力缩成“${action}”这样的一小步，会比一次解决全部更容易开始。下次卡住时，也可以先复用这个方法。`
+        : '当事情很多时，先停下来看见自己的感受，也是一个可以重复使用的小步骤。';
     summary.querySelector('.completion-stress-options').setAttribute('aria-label', '记录此刻的压力程度，1分很轻，5分很重');
     prompt.textContent = initialStress === null
         ? '现在，再轻轻感受一下：此刻的压力大约有几分？'
@@ -629,6 +634,7 @@ function renderCompletionSummary(restoredRating = null) {
     completionConsent.checked = metricsEnabled;
     completionConsent.addEventListener('change', () => setMetricsEnabled(completionConsent.checked));
     messages.append(summary);
+    if (completedAction) celebrateCompletion();
     syncMetricsControls();
     if (restoredRating !== null) applyRating(restoredRating, false);
     announcement.textContent = '这一刻的小结已准备好，可以自愿记录现在的感受。';
@@ -761,6 +767,9 @@ function updateCompanion() {
     } else if (supportMode) {
         state = 'listening';
         label = '先照顾好你的安全，我在听';
+    } else if (celebrationActive) {
+        state = 'celebrating';
+        label = '这一小步完成了，这份进展值得被看见';
     } else if (revealing || utterance) {
         state = 'speaking';
         label = '我们一起，把心事慢慢说开';
@@ -773,6 +782,16 @@ function updateCompanion() {
     }
     companion.dataset.state = state;
     companionStatus.textContent = label;
+}
+
+function celebrateCompletion() {
+    window.clearTimeout(celebrationTimer);
+    celebrationActive = true;
+    updateCompanion();
+    celebrationTimer = window.setTimeout(() => {
+        celebrationActive = false;
+        updateCompanion();
+    }, 3200);
 }
 
 function scrollMessages(force = false) {
@@ -1435,8 +1454,8 @@ async function speakReply(text, { preview = false, opening = false } = {}) {
     const current = new SpeechSynthesisUtterance(text);
     current.voice = selectCompanionVoice(voices);
     current.lang = current.voice.lang;
-    current.pitch = 1.42;
-    current.rate = 1.06;
+    current.pitch = 1.32;
+    current.rate = 1.02;
     current.volume = 0.84;
     utterance = current;
     const finish = (notice = '', retryOpening = false) => {

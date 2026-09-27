@@ -4,7 +4,7 @@ from unittest.mock import ANY, patch
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.test import TestCase, override_settings
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
 from .ai_client import AIUnavailable, build_user_prompt
@@ -23,9 +23,10 @@ class PageTests(TestCase):
         self.assertContains(response, 'landing.js?v=2')
         self.assertContains(response, 'sound-effects.js?v=3')
         self.assertContains(response, '关闭页面声音')
-        self.assertContains(response, '体验数据收集中')
+        self.assertContains(response, '核验数据收集中')
         self.assertNotContains(response, '<strong>0</strong>')
-        self.assertEqual(response['X-Frame-Options'], 'SAMEORIGIN')
+        self.assertEqual(response['X-Frame-Options'], 'DENY')
+        self.assertIn("frame-ancestors 'none'", response['Content-Security-Policy'])
 
     def test_chat_page_is_available_at_chat_path(self):
         response = self.client.get(reverse('home'))
@@ -40,6 +41,10 @@ class PageTests(TestCase):
         self.assertContains(response, '建议容易执行')
         self.assertContains(response, '本次陪伴有帮助')
         self.assertContains(response, '我愿意再次使用')
+        self.assertContains(response, '留给下次的方法')
+        self.assertContains(response, '愿意留下匿名体验反馈吗')
+        self.assertContains(response, 'home.js?v=guided-flow-19')
+        self.assertContains(response, 'home.css?v=guided-flow-14')
         self.assertContains(response, '仅保留在当前页面')
         self.assertContains(response, 'safetyDialog')
         self.assertContains(response, 'AI 不能进行心理或医学诊断')
@@ -58,7 +63,8 @@ class PageTests(TestCase):
         self.assertIn('public', journal['Cache-Control'])
         self.assertEqual(worker['Content-Type'], 'application/javascript')
         self.assertEqual(worker['Service-Worker-Allowed'], '/')
-        self.assertContains(worker, 'mindmate-pages-v15')
+        self.assertContains(worker, 'mindmate-pages-v16')
+        self.assertContains(worker, 'const response = await fetch(event.request)')
 
     def test_csrf_endpoint_returns_a_token(self):
         response = self.client.get(reverse('csrf'))
@@ -66,6 +72,13 @@ class PageTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()['csrfToken'])
         self.assertIn('csrftoken', response.cookies)
+
+    def test_health_endpoint_is_lightweight(self):
+        response = self.client.get(reverse('health'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {'status': 'ok'})
+        self.assertIn('no-cache', response['Cache-Control'])
 
     def test_journal_page_keeps_note_processing_in_browser(self):
         response = self.client.get(reverse('journal'))
@@ -415,6 +428,9 @@ class GuidedConversationTests(TestCase):
 
 
 class OutcomeRecordTests(TestCase):
+    def tearDown(self):
+        cache.clear()
+
     def test_missing_consent_cannot_create_or_change_a_record(self):
         event_id = str(uuid.uuid4())
         data = {'event_id': event_id, 'initial_stress': '4'}
@@ -425,7 +441,6 @@ class OutcomeRecordTests(TestCase):
         self.assertIsNone(OutcomeRecord.objects.get().final_stress)
 
     def test_another_session_cannot_update_an_existing_event(self):
-        from django.test import Client
         data = {'consent': 'granted', 'event_id': str(uuid.uuid4()), 'initial_stress': '5'}
         self.client.post(reverse('record_outcome'), data)
         self.assertEqual(Client().post(reverse('record_outcome'), {**data, 'final_stress': '1'}).status_code, 403)
@@ -444,7 +459,7 @@ class OutcomeRecordTests(TestCase):
 
     def test_summary_includes_increase_unchanged_and_missing_pairs(self):
         for before, after in ((5, 2), (3, 3), (2, 4), (None, 2), (4, None)):
-            OutcomeRecord.objects.create(initial_stress=before, final_stress=after)
+            OutcomeRecord.objects.create(initial_stress=before, final_stress=after, evidence_approved=True)
         response = self.client.get(reverse('landing'))
         self.assertEqual(response.context['outcome_rated'], 3)
         self.assertEqual(response.context['outcome_improved'], 1)
@@ -491,6 +506,7 @@ class OutcomeRecordTests(TestCase):
         self.assertEqual(record.return_intent_rating, 4)
         self.assertEqual(record.feedback_note, '希望以后增加更多科研压力场景。')
         self.assertFalse(hasattr(record, 'message'))
+        self.assertFalse(record.evidence_approved)
 
     def test_outcome_can_be_withdrawn_and_removed(self):
         event_id = str(uuid.uuid4())
@@ -510,9 +526,11 @@ class OutcomeRecordTests(TestCase):
     def test_landing_dashboard_uses_real_aggregate_values(self):
         OutcomeRecord.objects.create(
             scenario='exam', initial_stress=5, final_stress=3, action_completed=True,
+            evidence_approved=True,
         )
         OutcomeRecord.objects.create(
             scenario='coding', initial_stress=3, final_stress=3, action_completed=False,
+            evidence_approved=True,
         )
 
         response = self.client.get(reverse('landing'))
@@ -525,6 +543,29 @@ class OutcomeRecordTests(TestCase):
         self.assertFalse(response.context['outcome_evidence_ready'])
         self.assertContains(response, '小规模体验积累中')
         self.assertContains(response, '样本不足，暂不展示')
+
+    def test_unreviewed_records_are_excluded_from_public_evidence(self):
+        OutcomeRecord.objects.create(initial_stress=5, final_stress=1)
+
+        response = self.client.get(reverse('landing'))
+
+        self.assertEqual(response.context['outcome_total'], 0)
+        self.assertContains(response, '还没有通过人工核验')
+
+    @override_settings(OUTCOME_CREATE_RATE_LIMIT_PER_HOUR=2, OUTCOME_RATE_LIMIT_WINDOW_SECONDS=3600)
+    def test_new_outcome_records_are_rate_limited_by_network(self):
+        responses = []
+        for _ in range(3):
+            responses.append(Client().post(
+                reverse('record_outcome'),
+                {'consent': 'granted', 'event_id': str(uuid.uuid4())},
+                REMOTE_ADDR='203.0.113.8',
+                HTTP_USER_AGENT='trial-browser',
+            ))
+
+        self.assertEqual([response.status_code for response in responses], [200, 200, 429])
+        self.assertEqual(OutcomeRecord.objects.count(), 2)
+        self.assertIn('Retry-After', responses[-1])
 
     def test_invalid_stress_value_is_rejected(self):
         response = self.client.post(reverse('record_outcome'), {
@@ -580,6 +621,7 @@ class OutcomeRecordAdminTests(TestCase):
             helpful_rating=5,
             return_intent_rating=4,
             feedback_note='=SUM(1,1)',
+            evidence_approved=True,
         )
         OutcomeRecord.objects.create(
             scenario='coding',
@@ -599,6 +641,7 @@ class OutcomeRecordAdminTests(TestCase):
         self.assertEqual(response.status_code, 200)
         dashboard = response.context['outcome_dashboard']
         self.assertEqual(dashboard['total'], 1)
+        self.assertEqual(dashboard['approved'], 1)
         self.assertEqual(dashboard['completed'], 1)
         self.assertEqual(dashboard['action_rate'], 100)
         self.assertEqual(dashboard['improvement_rate'], 100)
@@ -617,3 +660,17 @@ class OutcomeRecordAdminTests(TestCase):
         self.assertIn('备考压力', content)
         self.assertNotIn('代码调试', content)
         self.assertIn("'=SUM(1,1)", content)
+        self.assertIn('人工核验', content)
+
+    def test_admin_can_approve_a_record_for_public_evidence(self):
+        record = OutcomeRecord.objects.get(scenario='coding')
+
+        response = self.client.post(reverse('admin:core_outcomerecord_change', args=[record.pk]), {
+            'evidence_approved': 'on',
+            '_save': '保存',
+        })
+
+        self.assertEqual(response.status_code, 302)
+        record.refresh_from_db()
+        self.assertTrue(record.evidence_approved)
+        self.assertIsNotNone(record.evidence_reviewed_at)

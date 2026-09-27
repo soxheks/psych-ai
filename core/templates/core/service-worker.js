@@ -1,4 +1,4 @@
-const PAGE_CACHE = 'mindmate-pages-v15';
+const PAGE_CACHE = 'mindmate-pages-v16';
 const NAVIGATION_PATHS = ['/', '/chat/', '/journal/'];
 
 async function warmNavigationPages() {
@@ -31,19 +31,13 @@ self.addEventListener('fetch', (event) => {
 
     event.respondWith((async () => {
         const cache = await caches.open(PAGE_CACHE);
-        const cached = await cache.match(url.pathname, { ignoreSearch: true, ignoreVary: true });
-        const refresh = fetch(event.request)
-            .then(async (response) => {
-                if (response.ok) await cache.put(url.pathname, response.clone());
-                return response;
-            })
-            .catch(() => null);
-
-        if (cached) {
-            event.waitUntil(refresh);
-            return cached;
+        try {
+            const response = await fetch(event.request);
+            if (response.ok) await cache.put(url.pathname, response.clone());
+            return response;
+        } catch {
+            return await cache.match(url.pathname, { ignoreSearch: true, ignoreVary: true })
+                || Response.error();
         }
-
-        return await refresh || Response.error();
     })());
 });

@@ -29,13 +29,14 @@
 {% if outcome_dashboard %}
 <section class="outcome-dashboard" aria-label="匿名效果统计摘要">
     <h2>匿名效果统计</h2>
-    <p>摘要与下方筛选条件同步，仅用于真实匿名记录，不包含对话原文。</p>
+    <p>摘要与下方筛选条件同步，不包含对话原文。只有人工核验后的记录才进入首页成效统计。</p>
     <div class="outcome-dashboard-grid">
         <section><span>筛选记录</span><strong>{{ outcome_dashboard.total }}</strong><small>份</small></section>
         <section><span>完成小行动</span><strong>{{ outcome_dashboard.completed }}</strong><small>{% if outcome_dashboard.action_rate != None %}{{ outcome_dashboard.action_rate }}%{% else %}暂无样本{% endif %}</small></section>
         <section><span>压力有所缓解</span><strong>{{ outcome_dashboard.improved }}</strong><small>{% if outcome_dashboard.improvement_rate != None %}前后测中 {{ outcome_dashboard.improvement_rate }}%{% else %}暂无前后测{% endif %}</small></section>
         <section><span>有效前后测</span><strong>{{ outcome_dashboard.paired }}</strong><small>份</small></section>
     </div>
+    <p class="outcome-rating-line">核验状态：当前筛选中已核验 {{ outcome_dashboard.approved }} 份。打开单条记录并勾选“已核验并纳入成效统计”后，才会纳入首页统计。</p>
     <p class="outcome-rating-line">平均评分：被理解 {{ outcome_dashboard.averages.understood|default:"--" }} · 建议可执行 {{ outcome_dashboard.averages.actionable|default:"--" }} · 帮助程度 {{ outcome_dashboard.averages.helpful|default:"--" }} · 再次使用意愿 {{ outcome_dashboard.averages.return_intent|default:"--" }}</p>
     <p class="outcome-rating-line">数据完整性：缺少前测 {{ outcome_dashboard.missing_initial }} 份，缺少后测 {{ outcome_dashboard.missing_final }} 份（可能重叠）。完整前后测中，降低 {{ outcome_dashboard.improved }} 份、不变 {{ outcome_dashboard.unchanged }} 份、上升 {{ outcome_dashboard.increased }} 份。</p>
     <p class="outcome-rating-line">统计单位是记录，不是独立人数；未配对数据不计入压力变化。自愿样本存在选择偏差，当次自评分数不能作为临床效果或因果证据。</p>

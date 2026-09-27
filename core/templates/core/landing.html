@@ -86,10 +86,10 @@
         <section class="outcome-section" aria-labelledby="outcomeTitle">
             <div class="outcome-heading">
                 <div>
-                    <p>真实、匿名、本次会话内可撤回</p>
+                    <p>真实、匿名、经人工核验</p>
                     <h2 id="outcomeTitle">匿名陪伴体验记录</h2>
                 </div>
-                <p>仅汇总用户主动同意贡献的结构化数据，不保存倾诉原文，也不把变化解释为医疗效果。</p>
+                <p>仅汇总用户主动同意、并经试用记录人工核验的结构化数据，不保存倾诉原文，也不把变化解释为医疗效果。</p>
             </div>
             {% if outcome_total %}<div class="evidence-status{% if outcome_evidence_ready %} is-ready{% endif %}">
                 <span>{% if outcome_evidence_ready %}可展示的初步样本{% else %}小规模体验积累中{% endif %}</span>
@@ -97,7 +97,7 @@
                 {% if outcome_last_date %}<time datetime="{{ outcome_last_date|date:'c' }}">数据截至 {{ outcome_last_date|date:'Y-m-d' }}</time>{% endif %}
             </div>
             <div class="outcome-metrics">
-                <article><span>已记录体验</span><strong>{{ outcome_total }}</strong><small>份匿名记录</small></article>
+                <article><span>已核验体验</span><strong>{{ outcome_total }}</strong><small>份真实匿名记录</small></article>
                 <article><span>完整前后评分</span><strong>{{ outcome_rated }}</strong><small>共 {{ outcome_total }} 份记录，未配对记录不计入变化</small></article>
                 <article><span>完成小行动</span><strong>{{ outcome_completed }}</strong><small>自愿反馈中的完成次数，不代表全部访客</small></article>
                 <article><span>平均压力变化</span><strong>{% if outcome_evidence_ready %}{{ outcome_average_change }}{% else %}--{% endif %}</strong><small>{% if outcome_evidence_ready %}分，正数表示降低{% else %}样本不足，暂不展示{% endif %}</small></article>
@@ -105,7 +105,7 @@
             <p class="outcome-note">{% if outcome_evidence_ready %}在 {{ outcome_rated }} 份完整前后评分中：压力降低 {{ outcome_improved }} 份，不变 {{ outcome_unchanged }} 份，上升 {{ outcome_increased }} 份。{% elif outcome_rated %}已收到前后评分，但样本数尚不足以形成趋势判断。{% else %}还没有完整的前后评分，暂时无法比较压力变化。{% endif %} 这是自愿记录的当次主观感受，不是临床量表，也不能证明变化由 AI 引起。记录数不等于独立人数。</p>{% else %}
             <div class="outcome-empty" role="status">
                 <span aria-hidden="true"></span>
-                <div><strong>体验数据收集中</strong><p>目前还没有用户主动同意贡献的匿名记录。我们只展示真实数据，不用示例数字填充结果。</p></div>
+                <div><strong>核验数据收集中</strong><p>目前还没有通过人工核验的真实匿名记录。待审核记录不会进入成效展示，也不用示例数字填充结果。</p></div>
             </div>
             {% endif %}
             <div class="trial-invitation">

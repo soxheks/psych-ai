@@ -347,7 +347,11 @@ h2 { font-size: 20px; font-weight: 600; }
 .completion-summary-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 7px; background: #e8f1f4; }
 .completion-summary small { display: block; margin-bottom: 2px; color: #728795; font-size: 10px; }
 .completion-summary h3 { color: #315267; font-size: 16px; font-weight: 650; }
+.completion-affirmation { margin: 14px 0 0; color: #315e49; font-size: 13px; font-weight: 650; line-height: 1.7; }
 .completion-action { margin: 14px 0 11px; color: #405b4d; font-size: 12px; line-height: 1.7; }
+.completion-takeaway { margin: 0 0 14px; padding: 11px 12px; border-left: 3px solid #8eb49f; background: #edf5f0; }
+.completion-takeaway strong { display: block; color: #315e49; font-size: 11px; }
+.completion-takeaway p { margin: 5px 0 0; color: #5d7468; font-size: 11px; line-height: 1.7; }
 .completion-checkin { padding-top: 12px; border-top: 1px solid #dce7eb; }
 .completion-prompt { margin: 0 0 10px; color: #526b5e; font-size: 11px; line-height: 1.65; }
 .completion-stress-options { max-width: 300px; }
@@ -360,7 +364,10 @@ h2 { font-size: 20px; font-weight: 600; }
 .stress-row b { display: block; width: 0; height: 100%; border-radius: inherit; background: #7da58f; transition: width 420ms var(--ease); }
 .stress-after b { background: #7896ad; }
 .stress-row em { font-style: normal; text-align: right; white-space: nowrap; }
-.completion-feedback { margin-top: 15px; padding-top: 14px; border-top: 1px solid #dce7eb; }
+.completion-feedback { margin-top: 15px; border-top: 1px solid #dce7eb; }
+.completion-feedback > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.completion-feedback > summary small { color: #83938b; font-size: 9px; font-weight: 400; }
+.completion-feedback-body { padding: 0 0 4px; }
 .completion-feedback-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 11px; }
 .completion-feedback-heading strong { color: #3c5d4d; font-size: 12px; font-weight: 650; }
 .completion-feedback-heading small { color: #83938b; font-size: 9px; text-align: right; }
@@ -398,10 +405,12 @@ h2 { font-size: 20px; font-weight: 600; }
 .companion[data-state="listening"] .character-sprite { background-position: 100% 0; }
 .companion[data-state="thinking"] .character-sprite { background-position: 0 100%; }
 .companion[data-state="speaking"] .character-sprite, .companion[data-state="greeting"] .character-sprite { background-position: 100% 100%; }
+.companion[data-state="celebrating"] .character-sprite { background-position: 100% 100%; }
 .companion[data-state="listening"] .character-motion { animation: listen 3.6s ease-in-out infinite; }
 .companion[data-state="thinking"] .character-motion { animation: think 3s ease-in-out infinite; }
 .companion[data-state="speaking"] .character-motion { animation: answer 1.8s ease-in-out infinite; }
 .companion[data-state="greeting"] .character-motion { animation: greet 1.5s var(--ease) both; }
+.companion[data-state="celebrating"] .character-motion { animation: celebrate 1.6s var(--ease) 2; }
 .companion-caption { width: 100%; min-height: 106px; padding-top: 10px; text-align: center; }
 .companion-name { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0 0 10px; font-size: 16px; font-weight: 600; }
 .companion-label { color: #819287; font-size: 10px; font-weight: 400; }
@@ -499,6 +508,7 @@ textarea::placeholder { color: #96a299; }
 @keyframes think { 0%, 100% { transform: rotate(-1deg); } 50% { transform: rotate(1.5deg) translateY(-3px); } }
 @keyframes answer { 0%, 100% { transform: rotate(0) translateY(0); } 30% { transform: rotate(-1.5deg) translateY(-4px); } 65% { transform: rotate(1deg) translateY(-1px); } }
 @keyframes greet { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-3deg) translateY(-5px); } 60% { transform: rotate(2deg) translateY(-2px); } }
+@keyframes celebrate { 0%, 100% { transform: rotate(0) translateY(0) scale(1); } 25% { transform: rotate(-2deg) translateY(-7px) scale(1.025); } 55% { transform: rotate(2deg) translateY(-3px) scale(1.01); } }
 @keyframes voice-bar { 0%, 100% { transform: scaleY(.7); } 50% { transform: scaleY(2.5); } }
 @keyframes message-in { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes send-wait { 0%, 100% { opacity: .5; transform: translate(0, 0); } 50% { opacity: 1; transform: translate(2px, -2px); } }
@@ -701,8 +711,8 @@ textarea::placeholder { color: #96a299; }
     .conversation-choices > span { display: none; }
     .completion-summary, .action-card, .safety-flow-card { width: 100%; margin-left: 0; }
     .completion-action { font-size: 13px; }
-    .completion-feedback > .experience-rating { grid-template-columns: 1fr; gap: 8px; }
-    .completion-feedback > .experience-rating > div { justify-content: space-between; }
+    .completion-feedback-body > .experience-rating { grid-template-columns: 1fr; gap: 8px; }
+    .completion-feedback-body > .experience-rating > div { justify-content: space-between; }
     .stress-scale button, .completion-stress-options button, .experience-rating button { width: 40px; height: 40px; flex-basis: 40px; }
     .stress-scale, .completion-stress-options { grid-template-columns: repeat(5, 40px); }
     .keyboard-open .context-panel .topics, .keyboard-open .dialogue-path,

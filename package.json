@@ -1,0 +1,10 @@
+{
+  "name": "psych-ai-browser-checks",
+  "private": true,
+  "scripts": {
+    "test:browser": "node scripts/check_companion.cjs && node scripts/check_scroll_voice.cjs && node scripts/check_action_state.cjs && node scripts/check_conversation_memory.cjs && node scripts/check_landing_journal.cjs && node scripts/check_transition_performance.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}
