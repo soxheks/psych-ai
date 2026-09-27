@@ -43,7 +43,7 @@ class PageTests(TestCase):
         self.assertContains(response, '我愿意再次使用')
         self.assertContains(response, '留给下次的方法')
         self.assertContains(response, '愿意留下匿名体验反馈吗')
-        self.assertContains(response, 'home.js?v=guided-flow-19')
+        self.assertContains(response, 'home.js?v=guided-flow-20')
         self.assertContains(response, 'home.css?v=guided-flow-14')
         self.assertContains(response, '仅保留在当前页面')
         self.assertContains(response, 'safetyDialog')
@@ -410,6 +410,27 @@ class GuidedConversationTests(TestCase):
         self.assertIn('已经完成了', payload['reply'])
         self.assertNotIn(repeated_question, payload['reply'])
         self.assertNotIn('？', payload['reply'])
+
+    @patch('core.views.generate_ai_reply', return_value=(
+        '太好啦，你已经很棒了～真的很厉害。夸夸你呀！',
+        'doubao',
+    ))
+    def test_model_reply_removes_infantilizing_generic_praise(self, generate):
+        response = self.client.post(reverse('chat'), {
+            'message': '我已经完成了。',
+            'scenario': 'competition',
+            'flow_stage': 'action',
+            'selected_action': '列出最重要的一项任务。',
+            'action_status': 'completed',
+        })
+
+        reply = response.json()['reply']
+        self.assertNotIn('～', reply)
+        self.assertNotIn('太好啦', reply)
+        self.assertNotIn('很棒', reply)
+        self.assertNotIn('真的很厉害', reply)
+        self.assertNotIn('夸夸你', reply)
+        self.assertIn('已经迈出了具体的一步', reply)
 
     @patch('core.views.generate_ai_reply', return_value=('我们看看下一步。', 'doubao'))
     def test_action_anchor_does_not_duplicate_terminal_punctuation(self, generate):

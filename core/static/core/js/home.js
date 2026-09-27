@@ -562,8 +562,14 @@ function stressChangeCopy(before, after) {
 }
 
 function renderCompletionSummary(restoredRating = null) {
-    if (completionSummaryRendered || !completionSummaryTemplate) return;
-    completionSummaryRendered = true;
+    if (!completionSummaryTemplate) return;
+    const existingSummary = messages.querySelector('.completion-summary');
+    if (existingSummary) {
+        completionSummaryRendered = true;
+        return;
+    }
+    // A failed stream can leave the in-memory flag stale even though no card exists.
+    completionSummaryRendered = false;
     const summary = completionSummaryTemplate.content.firstElementChild.cloneNode(true);
     const action = selectedAction || '刚才为自己选择的那一小步';
     const prompt = summary.querySelector('.completion-prompt');
@@ -634,6 +640,7 @@ function renderCompletionSummary(restoredRating = null) {
     completionConsent.checked = metricsEnabled;
     completionConsent.addEventListener('change', () => setMetricsEnabled(completionConsent.checked));
     messages.append(summary);
+    completionSummaryRendered = true;
     if (completedAction) celebrateCompletion();
     syncMetricsControls();
     if (restoredRating !== null) applyRating(restoredRating, false);

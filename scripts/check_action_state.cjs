@@ -49,10 +49,21 @@ const screenshotDir = process.env.SCREENSHOT_DIR;
                 });
                 return;
             }
+            if (requests.length === 2) {
+                await route.fulfill({
+                    status: 200,
+                    contentType: 'application/x-ndjson; charset=utf-8',
+                    body: [
+                        { type: 'meta', stage: 'action', action_status: 'completed', action_card: null },
+                        { type: 'delta', text: '你已经完成了这一步。', provider: 'doubao' },
+                    ].map((event) => JSON.stringify(event)).join('\n') + '\n',
+                });
+                return;
+            }
             await route.fulfill({ json: {
-                reply: requests.length === 2
-                    ? '你已经完成了这一步。完成后有没有感觉轻松一点？'
-                    : '能感觉轻松一点，是很值得记住的反馈。什么最帮助你完成了它？',
+                reply: requests.length === 3
+                    ? '你已经完成了这一步。此刻可以先停下来感受一下变化。'
+                    : '能感觉轻松一点，是很值得记住的反馈。',
                 provider: 'doubao',
                 stage: 'action',
                 action_status: 'completed',
@@ -82,10 +93,15 @@ const screenshotDir = process.env.SCREENSHOT_DIR;
         assert.match(await page.locator('.message.assistant:not(.pending) .bubble').last().textContent(), /一小步开始/);
         await page.locator('.action-accept').click();
         await page.locator('.action-complete').click();
-        await page.waitForFunction(() => !document.querySelector('#sendButton').disabled);
+        await page.locator('.message-retry').waitFor({ state: 'visible' });
 
         assert.equal(requests[1].selected_action, selectedAction);
         assert.equal(requests[1].action_status, 'completed');
+        assert.equal(await page.locator('.completion-summary').count(), 0);
+        await page.locator('.message-retry').click();
+        await page.waitForFunction(() => !document.querySelector('#sendButton').disabled);
+        assert.equal(requests[2].selected_action, selectedAction);
+        assert.equal(requests[2].action_status, 'completed');
         await page.locator('#dialogueStages li[data-stage="action"].complete').waitFor();
         assert.equal(await page.locator('#dialogueStages li[data-stage="action"] span').textContent(), '✓');
         assert.match(await page.locator('#dialogueStageLabel').textContent(), /已经完成/);
@@ -151,11 +167,11 @@ const screenshotDir = process.env.SCREENSHOT_DIR;
         await page.locator('#sendButton').click();
         await page.waitForFunction(() => !document.querySelector('#sendButton').disabled);
 
-        assert.equal(requests[2].selected_action, selectedAction);
-        assert.equal(requests[2].action_status, 'completed');
-        assert.equal(requests[2].flow_stage, 'action');
+        assert.equal(requests[3].selected_action, selectedAction);
+        assert.equal(requests[3].action_status, 'completed');
+        assert.equal(requests[3].flow_stage, 'action');
         assert.deepEqual(errors, []);
-        console.log('PASS: action state, completion feedback, explicit consent, structured outcome data and withdrawal all work.');
+        console.log('PASS: action state, interrupted completion retry, completion feedback, consent and outcome data all work.');
     } finally {
         await browser.close();
     }

@@ -789,6 +789,17 @@ def enforce_conversation_quality(reply, message, history, action_status):
 
 
 def normalize_reply_punctuation(reply):
+    reply = re.sub(r'[~～]+', '。', reply)
+    replacements = {
+        '太好啦': '听到这个进展',
+        '夸夸你呀': '这份进展值得被看见',
+        '夸夸你': '这份进展值得被看见',
+        '真的很厉害': '这份进展很不容易',
+        '已经很棒了': '已经迈出了具体的一步',
+        '很棒': '值得肯定',
+    }
+    for source, target in replacements.items():
+        reply = reply.replace(source, target)
     reply = re.sub(r'([。！？!?])([”’"])。', r'\1\2', reply)
     reply = re.sub(r'([。！？!?])\1+', r'\1', reply)
     reply = re.sub(r'([，、；：])\1+', r'\1', reply)
