@@ -6,7 +6,7 @@ from django.test import SimpleTestCase, override_settings
 from django.urls import reverse
 
 from .ai_client import AIUnavailable, build_user_prompt, call_doubao_stream, stream_ai_reply
-from .conversation import choose_phase, parse_memory, remember
+from .conversation import choose_phase, is_short_confirmation, parse_memory, remember
 
 
 class ConversationPacingTests(SimpleTestCase):
@@ -129,6 +129,91 @@ class ConversationMemoryTests(SimpleTestCase):
 
 
 class GuardedStreamTests(SimpleTestCase):
+    def test_exam_confirmation_uses_previous_question_without_assuming_action_consent(self):
+        history = [
+            {'role': 'user', 'content': '我在备考，越临近考试越难集中注意力。'},
+            {'role': 'assistant', 'content': '可能是担心这种状态会影响考试发挥？'},
+        ]
+        memory = remember({}, '对', history)
+        self.assertEqual(choose_phase('对', memory=memory), 'clarify')
+        self.assertTrue(is_short_confirmation('对', history))
+        self.assertFalse(is_short_confirmation('不对', history))
+        self.assertFalse(is_short_confirmation('对', []))
+        prompt = build_user_prompt('对', 'exam', history=history, memory=memory)
+        self.assertIn('本轮是对上一问的简短确认', prompt)
+        self.assertIn('不是每轮重新梳理事实和担心', prompt)
+        self.assertIn('影响考试发挥', prompt)
+        self.assertIn('不能据此认定用户同意行动', prompt)
+
+    def test_exam_three_turns_and_how_followup_match_in_both_response_modes(self):
+        history, memory = [], {}
+        turns = [
+            ('我在备考，越临近考试越难集中注意力。', '这种紧绷的状态很消耗精力。可能是担心这种状态会影响考试发挥？'),
+            ('对', '这种紧绷的状态很消耗精力。可能是担心这种状态会影响考试发挥？注意力一时分散，并不等于你的准备全部失效了。'),
+            ('那我应该怎么做', '最小知识点可以是一条公式的含义，弄清它的一点就够，不需要覆盖整章。'),
+            ('具体怎么做呢', '你可以只看公式中一个符号的意义，这个步骤的关键是验证自己是否理解，不用再扩展到整章。'),
+        ]
+        for index, (message, raw) in enumerate(turns):
+            payload = {'message': message, 'scenario': 'exam', 'history': json.dumps(history), 'memory': json.dumps(memory)}
+            events = self.events([(raw[:18], 'doubao'), (raw[18:], 'doubao')], **payload)
+            streamed = self.visible(events)
+            with patch('core.views.generate_ai_reply', return_value=(raw, 'doubao')):
+                normal = self.client.post(reverse('chat'), payload).json()
+            self.assertEqual(normal['reply'], streamed)
+            self.assertEqual(normal['provider'], 'doubao')
+            if index == 1:
+                self.assertEqual(streamed, '注意力一时分散，并不等于你的准备全部失效了。')
+                self.assertIsNone(normal['action_card'])
+            if index == 2:
+                self.assertIn(raw, streamed)
+                self.assertIsNotNone(normal['action_card'])
+            if index == 3:
+                self.assertEqual(raw, streamed)
+                self.assertIsNone(normal['action_card'])
+                self.assertNotIn('这一小步是', streamed)
+                prompt = build_user_prompt(message, 'exam', history=history, phase='control')
+                self.assertIn('本轮不再发卡或重复原文', prompt)
+            memory = normal['memory']
+            history.extend([{'role': 'user', 'content': message}, {'role': 'assistant', 'content': streamed}])
+
+    def test_repeated_statement_split_across_chunks_is_not_reemitted(self):
+        sentence = '考试临近时注意力分散，让你担心准备会白费。'
+        events = self.events([
+            (sentence[:9], 'doubao'), (sentence[9:], 'doubao'),
+            ('但一次走神不等于之前学过的东西都没有了。', 'doubao'),
+        ], history=json.dumps([{'role': 'assistant', 'content': sentence}]))
+        self.assertEqual(self.visible(events), '但一次走神不等于之前学过的东西都没有了。')
+
+    def test_deduplication_preserves_changed_meaning(self):
+        events = self.events([('你不是完全没有准备好。', 'doubao')],
+            history=json.dumps([{'role': 'assistant', 'content': '你是完全没有准备好。'}]))
+        self.assertEqual(self.visible(events), '你不是完全没有准备好。')
+
+    def test_selected_action_anchor_is_not_repeated_each_turn(self):
+        selected = '只圈出最重要的一项。'
+        events = self.events([('这一项的截止时间能帮你判断优先级。', 'doubao')],
+            message='怎么判断哪项最重要', action_status='selected', selected_action=selected,
+            history=json.dumps([{'role': 'assistant', 'content': '你当前选择的是“只圈出最重要的一项”。'}]))
+        self.assertEqual(self.visible(events), '这一项的截止时间能帮你判断优先级。')
+
+    def test_new_scenario_still_offers_its_own_card(self):
+        from .actions import build_action_card
+        events = self.events([('这次我们看代码的问题。', 'doubao')],
+            message='给我一个建议', scenario='coding',
+            history=json.dumps([{'role': 'assistant', 'content': build_action_card('exam')['step']}]))
+        self.assertEqual(events[-1]['action_card']['title'], '把问题缩小一圈')
+
+    def test_provider_failure_after_confirmation_does_not_restart_fact_question(self):
+        with patch('core.views.generate_ai_reply', side_effect=AIUnavailable('test')):
+            data = self.client.post(reverse('chat'), {
+                'message': '对', 'scenario': 'exam',
+                'history': json.dumps([{'role': 'assistant', 'content': '担心影响考试发挥？'}]),
+            }).json()
+        self.assertEqual(data['provider'], 'fallback')
+        self.assertNotIn('事实是什么', data['reply'])
+        self.assertNotIn('你提到“对”', data['reply'])
+        self.assertIsNone(data['action_card'])
+
     def test_proposed_action_is_shared_with_model_card_and_visible_reply(self):
         message = '我现在愿意试试一个小步骤，帮我选一个吧。'
         raw = '担心拖后腿很难受，我听见了。你可以选：1. 复制报错代码。2. 打开队友代码，只看第一行注释。'

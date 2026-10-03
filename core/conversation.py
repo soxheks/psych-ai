@@ -18,6 +18,13 @@ QUESTION = re.compile(r'[^。！!；;\n？?]+[？?]')
 END_REQUEST = re.compile(r'(今天|这次|本次|我们)?先?聊到这[里儿]?|结束本次对话|今天不聊了|先不聊了')
 
 
+def is_short_confirmation(message, history):
+    answer = re.sub(r'[\s，。！？!?嗯啊的]', '', message)
+    previous = next((item.get('content', '') for item in reversed(history or [])
+                     if item.get('role') == 'assistant'), '')
+    return answer in ('对', '是', '是这样', '没错', '确实', '就是这样', '是这样子') and bool(QUESTION.search(previous))
+
+
 def current_preference(message):
     """Resolve explicit changes in order; quoted past wishes do not set the pace."""
     current = re.sub(r'[“「].*?[”」]', '', message)

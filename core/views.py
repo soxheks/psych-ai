@@ -16,8 +16,8 @@ from django.views.decorators.http import require_GET, require_POST
 
 from .ai_client import AIUnavailable, generate_ai_reply, stream_ai_reply
 from .models import OutcomeRecord
-from .actions import build_action_card
-from .conversation import END_REQUEST, choose_phase, parse_memory, remember, take_sentences
+from .actions import action_was_presented, new_action_card
+from .conversation import END_REQUEST, choose_phase, is_short_confirmation, parse_memory, remember, take_sentences
 
 
 SCENARIO_PROMPTS = {
@@ -211,12 +211,12 @@ def chat(request):
                 memory=memory,
             )
         except AIUnavailable:
-            reply = build_supportive_reply(message, scenario, phase, selected_action, action_status)
+            reply = build_supportive_reply(message, scenario, phase, selected_action, action_status, history)
             provider = 'fallback'
     finally:
         cache.delete(lock_key)
 
-    action_card = build_action_card(scenario, selected_action) if phase == 'control' else None
+    action_card = new_action_card(scenario, selected_action, phase, history)
     guard = ReplyGuard(message, history, phase, selected_action, action_status, memory, action_card)
     guard.feed(reply, final=True)
     reply = guard.reply
@@ -311,10 +311,14 @@ class ReplyGuard:
         self.selected_action = selected_action
         self.action_card = action_card
         self.action_presented = False
+        self.confirming = is_short_confirmation(message, history)
+        self.action_anchored = action_was_presented(selected_action, history)
+        self.previous_sentences = []
         self.questions = list(memory.get('questions', []))
         for item in history:
             if item.get('role') == 'assistant':
                 self.questions.extend(re.findall(r'[^。！；;\n]*[？?]', item['content']))
+                self.previous_sentences.extend(take_sentences(item['content'], final=True)[0])
         self.question_count = 0
         self.fixed_reply = completed_relief_reply() if (
             phase != 'listen' and action_status == 'completed' and is_relief_message(message, history)
@@ -337,9 +341,12 @@ class ReplyGuard:
             sentence = normalize_reply_punctuation(sentence)
             if not sentence:
                 continue
-            # Action instructions come from the shared card, never a parallel model list.
+            # Keep explanations of the shared action, but not a competing task list.
             if self.phase == 'control' and (
-                re.search(r'行动卡|步骤|选项|[0-9一二三][.、：:]|[？?]|你可以|不妨|建议|试[试着]|先.{0,12}(做|写|列|看|打开|保存|复制|喝|休息)|复制|注释|清单|复现|验证|任务|准备好', sentence)
+                re.search(r'行动卡|[0-9一二三][.、：:]|[？?]', sentence)
+                or (self.action_card and re.search(
+                    r'你可以|不妨|建议你|试[试着]|先.{0,12}(做|写|列|看|打开|保存|复制|喝|休息)', sentence,
+                ))
                 or (self.action_card and action_text(self.action_card['step']) in sentence)
             ):
                 continue
@@ -362,9 +369,14 @@ class ReplyGuard:
                     continue
                 self.question_count += 1
                 self.questions.append(sentence)
-            if sentence in self.parts:
+            # Exact normalized repeats only: similar wording may contain a correction.
+            normalized = normalize_question(sentence)
+            if sentence in self.parts or (len(normalized) >= 10 and any(
+                normalized == normalize_question(old)
+                for old in [*self.previous_sentences, *self.parts]
+            )):
                 continue
-            if not self.parts and self.selected_action and self.phase == 'action' and self.action_status != 'completed':
+            if not self.parts and self.selected_action and not self.action_anchored and self.phase == 'action' and self.action_status != 'completed':
                 sentence = anchor_selected_action(sentence, self.phase, self.selected_action, self.action_status)
             self.parts.append(sentence)
             emitted.append(sentence)
@@ -377,6 +389,8 @@ class ReplyGuard:
         if final and not self.parts:
             if self.action_status == 'completed':
                 fallback = f'你已经完成了“{action_text(self.selected_action) or "刚才那一小步"}”。这份进展已经发生，现在可以按自己的节奏休息或继续聊。'
+            elif self.confirming:
+                fallback = '谢谢你确认，刚才这一点已经说清了，不需要再解释一遍。我会接着听，不急着把你的担心变成任务。'
             else:
                 fallback = '我在听。此刻不用急着给出答案，也不用把所有事情一下子解决。你可以按自己的节奏继续说。'
             self.parts.append(fallback)
@@ -385,7 +399,7 @@ class ReplyGuard:
 
 
 def stream_model_response(message, scenario, history, phase, selected_action, action_status, memory, lock_key=''):
-    action_card = build_action_card(scenario, selected_action) if phase == 'control' else None
+    action_card = new_action_card(scenario, selected_action, phase, history)
     status_labels = {
         'listen': '正在认真听你说',
         'clarify': '正在理解你此刻最在意的部分',
@@ -417,7 +431,7 @@ def stream_model_response(message, scenario, history, phase, selected_action, ac
         except AIUnavailable:
             if not guard.parts:
                 guard.buffer = ''
-                fallback = build_supportive_reply(message, scenario, phase, selected_action, action_status)
+                fallback = build_supportive_reply(message, scenario, phase, selected_action, action_status, history)
                 provider = 'fallback'
                 for sentence in guard.feed(fallback, final=True):
                     yield stream_event('delta', text=sentence, provider=provider)
@@ -808,7 +822,7 @@ def normalize_reply_punctuation(reply):
 
 
 
-def build_supportive_reply(message, scenario, phase='clarify', selected_action='', action_status=''):
+def build_supportive_reply(message, scenario, phase='clarify', selected_action='', action_status='', history=None):
     if phase == 'listen':
         return (
             '你愿意把这些感受告诉我，我会认真听。此刻不用整理好语言，也不必急着解决问题。'
@@ -825,6 +839,11 @@ def build_supportive_reply(message, scenario, phase='clarify', selected_action='
 
     excerpt = message[:80]
     if phase == 'control':
+        if scenario == 'exam':
+            return (
+                '这里的最小知识点，可以小到一条公式的含义，不需要覆盖整章。'
+                '这段时间的目标是弄清它的一点，而不是要求自己全程不分心；走神后回到刚才的位置就算继续。'
+            )
         return '谢谢你告诉我现在需要什么。我们按你的节奏来，不必勉强自己，也不需要一下子解决全部。'
     if phase == 'action':
         action = action_text(selected_action) or '刚才选定的那一步'
@@ -843,6 +862,11 @@ def build_supportive_reply(message, scenario, phase='clarify', selected_action='
         return (
             f'你正在尝试“{action}”。你提到“{excerpt}”，这已经让我知道当前进展在哪里了。\n\n'
             '接下来你更需要继续做一点，还是先把遇到的阻碍拆小？'
+        )
+    if is_short_confirmation(message, history):
+        return (
+            '明白，刚才这一点已经确认了，不用再从头解释。'
+            '担心的事还没有因此成为定局；我们可以慢慢聊它现在带给你的感受，不急着要求你行动。'
         )
     return (
         f'{scene}。你提到“{excerpt}”，我能感觉到这件事正在占用你很多精力。'

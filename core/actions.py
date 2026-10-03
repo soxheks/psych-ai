@@ -1,3 +1,24 @@
+import re
+
+
+def action_was_presented(step, history):
+    def normalize(text):
+        return re.sub(r'[\s。！？!?，,；;：:“”]', '', text)
+
+    action = normalize(step)
+    return bool(action) and any(
+        action in normalize(item.get('content', ''))
+        for item in (history or []) if item.get('role') == 'assistant'
+    )
+
+
+def new_action_card(scenario, selected_action, phase, history):
+    if phase != 'control':
+        return None
+    card = build_action_card(scenario, selected_action)
+    return None if action_was_presented(card['step'], history) else card
+
+
 ACTION_CARDS = {
     'competition': {
         'title': '先圈出最关键的一项',
