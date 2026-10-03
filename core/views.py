@@ -344,9 +344,6 @@ class ReplyGuard:
             # Keep explanations of the shared action, but not a competing task list.
             if self.phase == 'control' and (
                 re.search(r'行动卡|[0-9一二三][.、：:]|[？?]', sentence)
-                or (self.action_card and re.search(
-                    r'你可以|不妨|建议你|试[试着]|先.{0,12}(做|写|列|看|打开|保存|复制|喝|休息)', sentence,
-                ))
                 or (self.action_card and action_text(self.action_card['step']) in sentence)
             ):
                 continue
@@ -365,7 +362,7 @@ class ReplyGuard:
             if self.phase != 'control' and '行动卡' in sentence:
                 continue
             if is_question:
-                if self.question_count or question_is_repeated(sentence, self.questions):
+                if self.confirming or self.question_count or question_is_repeated(sentence, self.questions):
                     continue
                 self.question_count += 1
                 self.questions.append(sentence)

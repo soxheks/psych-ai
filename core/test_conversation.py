@@ -189,6 +189,17 @@ class GuardedStreamTests(SimpleTestCase):
             history=json.dumps([{'role': 'assistant', 'content': '你是完全没有准备好。'}]))
         self.assertEqual(self.visible(events), '你不是完全没有准备好。')
 
+    def test_confirmation_cannot_trigger_a_rephrased_confirmation_question(self):
+        events = self.events([('那就是想到考试结果会让你分心对吧？注意力分散不等于之前的准备都没有用了。', 'doubao')],
+            message='对', history=json.dumps([{'role': 'assistant', 'content': '是考试结果让你分心，还是复习内容让你难进入状态？'}]))
+        self.assertEqual(self.visible(events), '注意力分散不等于之前的准备都没有用了。')
+
+    def test_first_action_request_preserves_natural_explanation(self):
+        explanation = '你可以把最小知识点理解成一条公式的含义，不必覆盖一整章。'
+        events = self.events([(explanation, 'doubao')], message='那我应该怎么做', scenario='exam')
+        self.assertIn(explanation, self.visible(events))
+        self.assertIsNotNone(events[-1]['action_card'])
+
     def test_selected_action_anchor_is_not_repeated_each_turn(self):
         selected = '只圈出最重要的一项。'
         events = self.events([('这一项的截止时间能帮你判断优先级。', 'doubao')],
@@ -234,12 +245,14 @@ class GuardedStreamTests(SimpleTestCase):
     def test_lighter_card_is_also_the_only_proposed_action(self):
         from .actions import build_action_card
         old = build_action_card('coding')['step']
-        events = self.events([('不必勉强自己。你可以先看注释。', 'doubao')],
+        events = self.events([('不必勉强自己。你可以把预期结果写成一句很短的话。1. 先看注释。2. 重写整个项目。', 'doubao')],
             message='这一步太难', scenario='coding', selected_action=old, action_status='adjusting')
         reply = self.visible(events)
         self.assertNotEqual(events[-1]['action_card']['step'], old)
         self.assertIn(events[-1]['action_card']['step'], reply)
         self.assertNotIn('注释', reply)
+        self.assertNotIn('重写整个项目', reply)
+        self.assertIn('你可以把预期结果写成一句很短的话', reply)
 
     def events(self, chunks, **payload):
         with patch('core.views.stream_ai_reply', return_value=iter(chunks)):
