@@ -1,22 +1,24 @@
 import re
 
 
-def action_was_presented(step, history):
+def action_was_presented(step, history, memory=None):
     def normalize(text):
         return re.sub(r'[\s。！？!?，,；;：:“”]', '', text)
 
     action = normalize(step)
-    return bool(action) and any(
+    return bool(action) and (action in {
+        normalize(item) for item in (memory or {}).get('presented_actions', [])
+    } or any(
         action in normalize(item.get('content', ''))
         for item in (history or []) if item.get('role') == 'assistant'
-    )
+    ))
 
 
-def new_action_card(scenario, selected_action, phase, history):
+def new_action_card(scenario, selected_action, phase, history, memory=None):
     if phase != 'control':
         return None
     card = build_action_card(scenario, selected_action)
-    return None if action_was_presented(card['step'], history) else card
+    return None if action_was_presented(card['step'], history, memory) else card
 
 
 ACTION_CARDS = {
@@ -89,5 +91,5 @@ def build_action_card(scenario, excluded_step=''):
         'step': steps[0],
         'alternatives': steps[1:],
         'duration': '约 10 分钟',
-        'note': '不求一次做好，只确认这一步是否适合现在的你。',
+        'note': '这是一个可选的小步骤；现在只想聊聊也可以。',
     }

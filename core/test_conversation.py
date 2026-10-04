@@ -171,7 +171,7 @@ class GuardedStreamTests(SimpleTestCase):
                 self.assertEqual(raw, streamed)
                 self.assertIsNone(normal['action_card'])
                 self.assertNotIn('这一小步是', streamed)
-                prompt = build_user_prompt(message, 'exam', history=history, phase='control')
+                prompt = build_user_prompt(message, 'exam', history=history, phase='control', memory=memory)
                 self.assertIn('本轮不再发卡或重复原文', prompt)
             memory = normal['memory']
             history.extend([{'role': 'user', 'content': message}, {'role': 'assistant', 'content': streamed}])
@@ -225,13 +225,14 @@ class GuardedStreamTests(SimpleTestCase):
         self.assertNotIn('你提到“对”', data['reply'])
         self.assertIsNone(data['action_card'])
 
-    def test_proposed_action_is_shared_with_model_card_and_visible_reply(self):
+    def test_proposed_action_is_shared_with_model_and_card_without_repeating_in_reply(self):
         message = '我现在愿意试试一个小步骤，帮我选一个吧。'
         raw = '担心拖后腿很难受，我听见了。你可以选：1. 复制报错代码。2. 打开队友代码，只看第一行注释。'
         events = self.events([(raw[:30], 'doubao'), (raw[30:], 'doubao')], message=message, scenario='coding')
         reply = self.visible(events)
         card = events[-1]['action_card']
-        self.assertIn(card['step'], reply)
+        self.assertNotIn(card['step'], reply)
+        self.assertIn(card['step'], events[-1]['memory']['presented_actions'])
         self.assertNotIn('复制报错代码', reply)
         self.assertNotIn('注释', reply)
         self.assertIn('我听见了', reply)
@@ -249,7 +250,8 @@ class GuardedStreamTests(SimpleTestCase):
             message='这一步太难', scenario='coding', selected_action=old, action_status='adjusting')
         reply = self.visible(events)
         self.assertNotEqual(events[-1]['action_card']['step'], old)
-        self.assertIn(events[-1]['action_card']['step'], reply)
+        self.assertNotIn(events[-1]['action_card']['step'], reply)
+        self.assertIn(events[-1]['action_card']['step'], events[-1]['memory']['presented_actions'])
         self.assertNotIn('注释', reply)
         self.assertNotIn('重写整个项目', reply)
         self.assertIn('你可以把预期结果写成一句很短的话', reply)

@@ -17,7 +17,8 @@ from django.views.decorators.http import require_GET, require_POST
 from .ai_client import AIUnavailable, generate_ai_reply, stream_ai_reply
 from .models import OutcomeRecord
 from .actions import action_was_presented, new_action_card
-from .conversation import END_REQUEST, choose_phase, is_short_confirmation, parse_memory, remember, take_sentences
+from .conversation import END_REQUEST, choose_phase, is_explicit_correction, is_short_confirmation, parse_memory, remember, resolve_action_status, take_sentences
+from .medical import medical_boundary_reply
 
 
 SCENARIO_PROMPTS = {
@@ -56,9 +57,9 @@ RISK_PATTERNS = tuple(re.compile(pattern) for pattern in (
     r'死了(?:就|也)?算了',
 ))
 RISK_NEGATION_ONLY = re.compile(
-    r'^\s*(?:我)?(?:没有|没|从没|从未|不会|并不)(?:真的)?'
+    r'^\s*(?:我)?(?:现在|目前|真的|确实)?(?:没有|没|从没|从未|不会|并不)(?:真的)?'
     r'(?:想过|想|打算)?(?:自杀|轻生|伤害自己|自残|想死)'
-    r'[\s。！？.!?]*$'
+    r'(?:的(?:念头|想法|打算))?[\s。！.!]*$'
 )
 
 RISK_STATES = {'active', 'supported'}
@@ -153,11 +154,22 @@ def chat(request):
     if not conversation_intent and END_REQUEST.search(message):
         conversation_intent = 'end'
     memory = remember(parse_memory(request.POST.get('memory', '{}')), message, history, intent=conversation_intent)
+    if memory.get('topic') != 'personal':
+        action_status = resolve_action_status(message, selected_action, action_status)
     if conversation_intent:
         data = build_intent_response(conversation_intent, flow_stage, action_status)
         if conversation_intent in ('stay', 'lighter'):
             data['stage'] = 'listen'
         data['memory'] = remember(memory, message, history, data['reply'], conversation_intent)
+        return stream_static_response(data) if wants_stream else JsonResponse(data)
+
+    boundary_reply = medical_boundary_reply(message, history)
+    if boundary_reply:
+        data = {
+            'reply': boundary_reply, 'provider': 'guided', 'stage': 'listen',
+            'action_status': action_status, 'action_card': None, 'medical_boundary': True,
+            'memory': remember(memory, message, history, boundary_reply),
+        }
         return stream_static_response(data) if wants_stream else JsonResponse(data)
 
     client_id, network_id = chat_client_ids(request)
@@ -191,7 +203,7 @@ def chat(request):
             'request_in_progress', 409,
         )
 
-    phase = choose_phase(message, action_status, memory)
+    phase = choose_phase(message, action_status, memory, history)
 
     if wants_stream:
         return stream_model_response(
@@ -211,12 +223,12 @@ def chat(request):
                 memory=memory,
             )
         except AIUnavailable:
-            reply = build_supportive_reply(message, scenario, phase, selected_action, action_status, history)
+            reply = build_supportive_reply(message, scenario, phase, selected_action, action_status, history, memory)
             provider = 'fallback'
     finally:
         cache.delete(lock_key)
 
-    action_card = new_action_card(scenario, selected_action, phase, history)
+    action_card = new_action_card(scenario, selected_action, phase, history, memory)
     guard = ReplyGuard(message, history, phase, selected_action, action_status, memory, action_card)
     guard.feed(reply, final=True)
     reply = guard.reply
@@ -226,7 +238,7 @@ def chat(request):
         'stage': phase,
         'action_status': action_status,
         'action_card': action_card,
-        'memory': remember(memory, message, history, reply),
+        'memory': remember(memory, message, history, reply, action_card=action_card),
     })
 
 
@@ -259,8 +271,13 @@ def chat_error(message, code, status):
 
 def detects_immediate_risk(message):
     normalized = re.sub(r'\s+', '', message)
-    if RISK_NEGATION_ONLY.fullmatch(normalized):
-        return False
+    # Remove only complete, unambiguous denials; every other clause is still checked.
+    clauses = re.split(r'[，,。！!；;\n]|但是|可是|不过|然而|但', normalized)
+    denied = [clause for clause in clauses if RISK_NEGATION_ONLY.fullmatch(clause)]
+    remaining = '。'.join(clause for clause in clauses if not RISK_NEGATION_ONLY.fullmatch(clause))
+    if denied and re.search(r'控制不住|忍不住|不能保证|不敢保证|不确定|说不准|骗自己', remaining):
+        return True
+    normalized = remaining
     return any(word in normalized for word in RISK_WORDS) or any(
         pattern.search(normalized) for pattern in RISK_PATTERNS
     )
@@ -307,12 +324,13 @@ class ReplyGuard:
         self.buffer = ''
         self.parts = []
         self.phase = phase
-        self.action_status = action_status
-        self.selected_action = selected_action
+        self.action_status = '' if memory.get('topic') == 'personal' else action_status
+        self.selected_action = '' if memory.get('topic') == 'personal' else selected_action
         self.action_card = action_card
-        self.action_presented = False
         self.confirming = is_short_confirmation(message, history)
-        self.action_anchored = action_was_presented(selected_action, history)
+        self.correcting = is_explicit_correction(message)
+        self.relief = self.action_status == 'completed' and is_relief_message(message, history)
+        self.action_anchored = action_was_presented(selected_action, history, memory)
         self.previous_sentences = []
         self.questions = list(memory.get('questions', []))
         for item in history:
@@ -320,20 +338,12 @@ class ReplyGuard:
                 self.questions.extend(re.findall(r'[^。！；;\n]*[？?]', item['content']))
                 self.previous_sentences.extend(take_sentences(item['content'], final=True)[0])
         self.question_count = 0
-        self.fixed_reply = completed_relief_reply() if (
-            phase != 'listen' and action_status == 'completed' and is_relief_message(message, history)
-        ) else ''
 
     @property
     def reply(self):
         return ''.join(self.parts)
 
     def feed(self, text, final=False):
-        if self.fixed_reply:
-            if self.parts:
-                return []
-            self.parts.append(self.fixed_reply)
-            return [self.fixed_reply]
         self.buffer += text
         sentences, self.buffer = take_sentences(self.buffer, final)
         emitted = []
@@ -354,7 +364,7 @@ class ReplyGuard:
                 continue
             if self.action_status in ('selected', 'started', 'stuck', 'adjusting') and re.search(r'你.{0,3}已经完成|你完成了', sentence):
                 continue
-            is_question = bool(re.search(r'[？?]|吗[。！!]?$', sentence))
+            is_question = bool(re.search(r'[？?]|(?:吗|对吧|是吧|对不对|是不是)[。！!]?$', sentence))
             if self.phase == 'listen' and (
                 is_question or re.search(r'行动卡|任务清单|建议你|试着|试试|先.{0,8}(做|写|列|完成)|下一步', sentence)
             ):
@@ -362,7 +372,7 @@ class ReplyGuard:
             if self.phase != 'control' and '行动卡' in sentence:
                 continue
             if is_question:
-                if self.confirming or self.question_count or question_is_repeated(sentence, self.questions):
+                if self.confirming or self.correcting or self.relief or self.question_count or question_is_repeated(sentence, self.questions):
                     continue
                 self.question_count += 1
                 self.questions.append(sentence)
@@ -377,15 +387,13 @@ class ReplyGuard:
                 sentence = anchor_selected_action(sentence, self.phase, self.selected_action, self.action_status)
             self.parts.append(sentence)
             emitted.append(sentence)
-        if final and self.action_card and not self.action_presented:
-            self.action_presented = True
-            lead = '\n\n' if self.parts else '好，我们按你现在愿意尝试的节奏来，不需要一下子解决全部。\n\n'
-            sentence = f'{lead}这一小步是：{self.action_card["step"]}\n做到这里就可以停下来，感受一下自己。'
-            self.parts.append(sentence)
-            emitted.append(sentence)
         if final and not self.parts:
-            if self.action_status == 'completed':
+            if self.action_card:
+                fallback = '我们可以把眼前的事情缩成一个小步骤；做到多少、是否继续，都由你决定。'
+            elif self.action_status == 'completed':
                 fallback = f'你已经完成了“{action_text(self.selected_action) or "刚才那一小步"}”。这份进展已经发生，现在可以按自己的节奏休息或继续聊。'
+            elif self.correcting:
+                fallback = '谢谢你纠正我。刚才的理解不准确，我会以你现在说的为准，不需要你再证明或确认一遍。'
             elif self.confirming:
                 fallback = '谢谢你确认，刚才这一点已经说清了，不需要再解释一遍。我会接着听，不急着把你的担心变成任务。'
             else:
@@ -396,7 +404,7 @@ class ReplyGuard:
 
 
 def stream_model_response(message, scenario, history, phase, selected_action, action_status, memory, lock_key=''):
-    action_card = new_action_card(scenario, selected_action, phase, history)
+    action_card = new_action_card(scenario, selected_action, phase, history, memory)
     status_labels = {
         'listen': '正在认真听你说',
         'clarify': '正在理解你此刻最在意的部分',
@@ -428,7 +436,7 @@ def stream_model_response(message, scenario, history, phase, selected_action, ac
         except AIUnavailable:
             if not guard.parts:
                 guard.buffer = ''
-                fallback = build_supportive_reply(message, scenario, phase, selected_action, action_status, history)
+                fallback = build_supportive_reply(message, scenario, phase, selected_action, action_status, history, memory)
                 provider = 'fallback'
                 for sentence in guard.feed(fallback, final=True):
                     yield stream_event('delta', text=sentence, provider=provider)
@@ -448,7 +456,7 @@ def stream_model_response(message, scenario, history, phase, selected_action, ac
             action_status=action_status,
             action_card=None if interrupted else action_card,
             interrupted=interrupted,
-            memory=remember(memory, message, history, reply),
+            memory=remember(memory, message, history, reply, action_card=None if interrupted else action_card),
         )
 
     def guarded_events():
@@ -784,15 +792,14 @@ def remove_repeated_questions(reply, history):
 
 def completed_relief_reply():
     return (
-        '听到你说现在好一些，我也替你松了一口气。你说的这份变化值得留意，'
-        '不需要马上给它找一个解释。\n\n'
-        '刚才这一小步已经完成了，现在不用急着回答更多问题。先让自己在这份轻松里停一会儿吧。'
+        '听到你说现在好一些，我也替你松了一口气。刚才这一小步已经完成了，'
+        '现在不用急着回答更多问题，可以按自己的节奏休息或继续聊。'
     )
 
 
 def enforce_conversation_quality(reply, message, history, action_status):
     reply, repeated = remove_repeated_questions(reply, history)
-    if action_status == 'completed' and is_relief_message(message):
+    if not reply and action_status == 'completed' and is_relief_message(message):
         return completed_relief_reply()
     if repeated and not reply:
         return '我不继续追问了。你已经说得很清楚，我们可以先在这里停一会儿，我会陪着你。'
@@ -819,7 +826,14 @@ def normalize_reply_punctuation(reply):
 
 
 
-def build_supportive_reply(message, scenario, phase='clarify', selected_action='', action_status='', history=None):
+def build_supportive_reply(message, scenario, phase='clarify', selected_action='', action_status='', history=None, memory=None):
+    if is_explicit_correction(message):
+        return f'谢谢你纠正我。你说的是：“{message[:180].rstrip("。！？!?")}”。我会以这次表达为准，不再沿用刚才的推测。'
+    if (memory or {}).get('topic') == 'personal':
+        return (
+            '我们先聊你正在经历的这件事，不把它变成学习任务。'
+            '你不需要急着处理好所有感受，可以按自己的节奏说。'
+        )
     if phase == 'listen':
         return (
             '你愿意把这些感受告诉我，我会认真听。此刻不用整理好语言，也不必急着解决问题。'
@@ -836,16 +850,21 @@ def build_supportive_reply(message, scenario, phase='clarify', selected_action='
 
     excerpt = message[:80]
     if phase == 'control':
-        if scenario == 'exam':
-            return (
-                '这里的最小知识点，可以小到一条公式的含义，不需要覆盖整章。'
-                '这段时间的目标是弄清它的一点，而不是要求自己全程不分心；走神后回到刚才的位置就算继续。'
-            )
-        return '谢谢你告诉我现在需要什么。我们按你的节奏来，不必勉强自己，也不需要一下子解决全部。'
+        explanation = {
+            'exam': '这里的最小知识点，可以小到一条公式的含义，不需要覆盖整章；走神后回到刚才的位置就算继续。',
+            'competition': '任务挤在一起时，可以先分清眼前最要紧的部分；只处理其中一个开头，不必把所有事一起扛起来。',
+            'research': '暂时没有结果不等于没有进展。把已经知道的和还需验证的分开，能让下一次尝试更具体。',
+            'coding': '先缩小要检查的范围，比同时追着所有报错跑更容易看清问题；一次只验证一个变化，不是在证明你的能力。',
+            'gpa': '成绩比较很容易把注意力拉向无法立刻改变的结果；眼前更小的调整，可以只落在一门课上。',
+            'setback': '一次结果包含可以回看的信息，但它不等于对你整个人的评价；这次只看其中能调整的一处。',
+        }.get(scenario, '眼前的事情不用一次解决，可以先把范围缩小到一个容易停下来的尝试。')
+        return explanation + '这里有一个可选的小步骤，暂时不做也没关系，我们可以继续聊。'
     if phase == 'action':
         action = action_text(selected_action) or '刚才选定的那一步'
         if action_status == 'completed':
             if is_relief_message(message):
+                if re.search(r'因为|让我|帮我|靠|通过', message):
+                    return f'你提到：“{message[:180].rstrip("。！？!?")}”。这是你自己发现的具体反馈，值得留下。那一步已经完成，此刻不必继续复盘，也可以先休息。'
                 return completed_relief_reply()
             return (
                 f'收到啦，你已经完成了“{action}”。在有压力的时候还能迈出并完成这一小步，很不容易。\n\n'

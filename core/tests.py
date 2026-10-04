@@ -43,7 +43,7 @@ class PageTests(TestCase):
         self.assertContains(response, '我愿意再次使用')
         self.assertContains(response, '留给下次的方法')
         self.assertContains(response, '愿意留下匿名体验反馈吗')
-        self.assertContains(response, 'home.js?v=guided-flow-20')
+        self.assertContains(response, 'home.js?v=guided-flow-22')
         self.assertContains(response, 'home.css?v=guided-flow-14')
         self.assertContains(response, '仅保留在当前页面')
         self.assertContains(response, 'safetyDialog')
@@ -406,8 +406,8 @@ class GuidedConversationTests(TestCase):
         payload = response.json()
         self.assertEqual(payload['provider'], 'doubao')
         self.assertEqual(payload['action_status'], 'completed')
-        self.assertIn('我也替你松了一口气', payload['reply'])
         self.assertIn('已经完成了', payload['reply'])
+        self.assertNotIn('不需要马上给它找一个解释', payload['reply'])
         self.assertNotIn(repeated_question, payload['reply'])
         self.assertNotIn('？', payload['reply'])
 

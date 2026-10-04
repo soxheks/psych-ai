@@ -192,10 +192,12 @@ function cleanMemory(value) {
         concern: text(value.concern, 240),
         facts: list(value.facts, 8),
         questions: list(value.questions, 12),
+        presented_actions: list(value.presented_actions, 12),
         answered: Array.isArray(value.answered) ? value.answered.slice(-6).filter((item) => item && typeof item === 'object').map((item) => ({
             question: text(item.question), answer: text(item.answer),
         })).filter((item) => item.question && item.answer) : [],
         preference: ['listen', 'clarify', 'action'].includes(value.preference) ? value.preference : '',
+        topic: ['personal', 'academic'].includes(value.topic) ? value.topic : '',
     };
 }
 
@@ -425,10 +427,26 @@ function submitGuidedUpdate(text, stage = 'action') {
     return true;
 }
 
+function syncCompletedActionCard() {
+    if (actionStatus !== 'completed' || !selectedAction) return;
+    const cards = [...messages.querySelectorAll('.action-card.is-accepted')];
+    const card = cards.reverse().find((item) => item.querySelector('.action-step')?.textContent === selectedAction);
+    if (!card) return;
+    card.classList.remove('is-running', 'is-stuck', 'is-adjusting');
+    card.classList.add('is-complete');
+    card.querySelector('.action-next-status').textContent = '这一步已经完成，可以按自己的节奏休息或继续聊。';
+    card.querySelectorAll('.action-progress-actions button').forEach((button) => { button.disabled = true; });
+}
+
 function renderActionCard(card, restoredStatus = '') {
     if (!card || typeof card.step !== 'string' || !actionCardTemplate) return;
-    messages.querySelector('.action-card:not(.is-accepted)')?.remove();
+    messages.querySelectorAll('.action-card:not(.is-accepted)').forEach((previous) => {
+        conversationMemory.presented_actions = (conversationMemory.presented_actions || [])
+            .filter((step) => step !== previous.dataset.proposedStep);
+        previous.remove();
+    });
     const actionCard = actionCardTemplate.content.firstElementChild.cloneNode(true);
+    actionCard.dataset.proposedStep = card.step;
     const steps = [card.step, ...(Array.isArray(card.alternatives) ? card.alternatives : [])]
         .filter((step, index, items) => typeof step === 'string' && step.trim() && items.indexOf(step) === index);
     let stepIndex = 0;
@@ -459,6 +477,9 @@ function renderActionCard(card, restoredStatus = '') {
         accept.textContent = '这一步，已经选好了';
         conversationHistory.push({ role: 'user', content: '我选择的今日行动是：' + steps[stepIndex] });
         selectedAction = steps[stepIndex];
+        conversationMemory.presented_actions = [...new Set([
+            ...(conversationMemory.presented_actions || []), selectedAction,
+        ])].slice(-12);
         actionStatus = 'selected';
         updateDialogueStage('action');
         companionStatus.textContent = '不用做完全部，先陪你迈出这一小步';
@@ -726,6 +747,8 @@ function restoreProgress() {
     selectedAction = typeof saved.selectedAction === 'string' ? saved.selectedAction.slice(0, 500) : '';
     actionStatus = validStatuses.has(saved.actionStatus) ? saved.actionStatus : '';
     conversationMemory = cleanMemory(saved.memory);
+    // Only selected cards are restored; a missing proposal may be shown again.
+    conversationMemory.presented_actions = selectedAction && actionStatus ? [selectedAction] : [];
     updateMemorySummary();
     initialStress = [1, 2, 3, 4, 5].includes(saved.initialStress) ? saved.initialStress : null;
     finalStress = [1, 2, 3, 4, 5].includes(saved.finalStress) ? saved.finalStress : null;
@@ -1194,6 +1217,14 @@ form.addEventListener('submit', async (event) => {
         if (!supportMode) {
             riskState = '';
             updateDialogueStage(data.stage, actionStatus);
+            syncCompletedActionCard();
+            if (conversationMemory.topic === 'personal' || data.medical_boundary) {
+                messages.querySelectorAll('.action-card:not(.is-accepted)').forEach((card) => card.remove());
+                conversationMemory.presented_actions = Array.from(
+                    messages.querySelectorAll('.action-card.is-accepted .action-step'),
+                    (step) => step.textContent.trim(),
+                ).slice(-12);
+            }
         }
         revealing = true;
         updateCompanion();
