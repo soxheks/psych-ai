@@ -10,6 +10,70 @@ from .conversation import choose_phase, has_action_context, remember
 
 
 class StageHandoffTests(SimpleTestCase):
+    def test_general_companionship_does_not_persist_a_pause(self):
+        for message in ('先陪我聊聊', '先陪我说说最近的考试吧。', '先陪我聊一会儿，我在备考。'):
+            memory = remember({}, message, [])
+            self.assertNotEqual(memory['preference'], 'listen')
+            self.assertEqual(choose_phase(message, memory=memory), 'clarify')
+
+    def test_mild_distress_after_support_can_progress_without_action_password(self):
+        first = '我在备考，最近好累。'
+        self.assertEqual(choose_phase(first), 'listen')
+        memory = remember({}, first, [], '我听见这段时间的疲惫了。')
+        history = [{'role': 'user', 'content': first}, {'role': 'assistant', 'content': '我听见这段时间的疲惫了。'}]
+        self.assertEqual(choose_phase('还是好累，想接着说说。', memory=memory, history=history), 'clarify')
+        for streaming in (False, True):
+            data, _ = self.request('我还是很难受，每天复习都卡在公式上。', history, memory, streaming)
+            self.assertEqual(data['stage'], 'control')
+            self.assertIsNotNone(data['action_card'])
+            self.assertEqual(data['action_status'], '')
+
+    def test_explicit_pause_and_overwhelm_still_win_after_support(self):
+        for message in ('我只想倾诉，不想听建议。', '先陪我待一会儿。', '一直哭，脑子很乱，主要担心考试。'):
+            data, _ = self.request(message, self.history())
+            self.assertEqual(data['stage'], 'listen')
+            self.assertIsNone(data['action_card'])
+        memory = remember({}, '先别给建议，听我说。', [])
+        data, _ = self.request('我很难受，每天都卡在公式上。', self.history(), memory)
+        self.assertEqual(data['stage'], 'listen')
+
+    def test_explicit_resume_releases_saved_listening_preference(self):
+        memory = remember({}, '先陪我待一会儿。', [])
+        resume = '我现在想一起梳理，看看最困扰我的部分。'
+        updated = remember(memory, resume, self.history())
+        self.assertEqual(updated['preference'], 'clarify')
+        data, _ = self.request(resume, self.history(), updated)
+        self.assertEqual(data['stage'], 'clarify')
+        data, _ = self.request('每天复习都会走神，脑子里想着考砸。', self.history(), data['memory'])
+        self.assertEqual(data['stage'], 'control')
+
+    def test_resume_fallback_uses_existing_concern_not_button_text(self):
+        from .views import build_supportive_reply
+        reply = build_supportive_reply(
+            '我现在想一起梳理，看看最困扰我的部分。', 'competition', phase='clarify',
+            memory={'concern': '最近上课走神很焦虑。'},
+        )
+        self.assertIn('最近上课走神很焦虑', reply)
+        self.assertNotIn('竞赛', reply)
+        self.assertNotIn('我现在想一起梳理', reply)
+
+    def test_short_concrete_obstacle_is_not_lost_to_length_threshold(self):
+        for message in ('卡在公式推导', '证明跟不上', '总是听不懂'):
+            self.assertEqual(choose_phase(message, history=self.history()), 'control')
+        for message in ('好吧', '说不清', '不知道原因', '还没说完'):
+            self.assertEqual(choose_phase(message, history=self.history()), 'clarify')
+
+    def test_progression_never_completes_action_without_user_report(self):
+        data, _ = self.request('每次复习都卡在公式上，很难受。', self.history())
+        self.assertEqual(data['stage'], 'control')
+        step = data['action_card']['step']
+        data, _ = self.request('我准备开始这一步了', self.history(), data['memory'], selected_action=step, action_status='selected')
+        self.assertEqual(data['stage'], 'action')
+        self.assertEqual(data['action_status'], 'selected')
+        data, _ = self.request('我已经完成了这一步，现在轻松一点了。', self.history(), data['memory'], selected_action=step, action_status='started')
+        self.assertEqual(data['stage'], 'action')
+        self.assertEqual(data['action_status'], 'completed')
+
     def setUp(self):
         cache.clear()
 
@@ -76,7 +140,6 @@ class StageHandoffTests(SimpleTestCase):
             '主要是内容太多，但我现在只想说说，不想听建议。',
             '主要是时间不够，我还没准备好。',
             '主要担心考试，一直哭，脑子很乱。',
-            '我很难受，不知道怎么办。',
         ):
             data, _ = self.request(message, self.history())
             self.assertEqual(data['stage'], 'listen')
@@ -84,6 +147,10 @@ class StageHandoffTests(SimpleTestCase):
         paused = remember({}, '先陪我说说，不想行动。', [])
         data, _ = self.request('主要是周五考试，内容太多了。', self.history(), paused)
         self.assertEqual(data['stage'], 'listen')
+        # After prior support, uncertainty invites clarification, not an automatic task.
+        data, _ = self.request('我很难受，不知道怎么办。', self.history())
+        self.assertEqual(data['stage'], 'clarify')
+        self.assertIsNone(data['action_card'])
 
     def test_personal_medical_and_safety_branches_still_take_priority(self):
         for message, expected in (

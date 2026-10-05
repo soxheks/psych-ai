@@ -4,8 +4,9 @@ import json
 import re
 
 
-LISTEN_REQUEST = re.compile(r'只想.{0,8}(聊|说|倾诉|听)|不想.{0,8}(建议|办法|行动|任务|回答|分析)|别.{0,5}(问|催|建议)|先.{0,6}(陪|听我)|暂时.{0,5}(不做|不聊任务)')
+LISTEN_REQUEST = re.compile(r'只想.{0,8}(聊|说|倾诉|听)|不想.{0,8}(建议|办法|行动|任务|回答|分析)|别.{0,5}(问|催|建议)|先.{0,6}听我|先陪我(?:安静|待|坐|缓|歇)|暂时.{0,5}(不做|不聊任务)')
 DISTRESS = re.compile(r'崩溃|撑不住|喘不过气|一直哭|哭了|想哭|很难受|好难受|太难受|好累|很疲惫|脑子很乱')
+OVERWHELMED = re.compile(r'崩溃|撑不住|喘不过气|一直哭|脑子很乱|太难受')
 ACTION_REQUEST = re.compile(r'怎么(做|开始)|(?<!不知道)怎么办|如何.{0,5}(开始|做)|(?:有什么|有没有).{0,8}(办法|建议)|不知道.{0,8}(从哪.{0,3}开始|怎么下手)|给我.{0,6}(建议|步骤|行动)|帮我.{0,10}(拆|计划|安排|选|找.{0,4}步骤)|(?:想|愿意|可以|打算).{0,8}(试试|行动|做一点|开始)|准备好了|可以开始|选.{0,8}(小步骤|小行动)')
 CONTROL_COMMITMENT = re.compile(
     r'(?:能|可以)控制的(?:是|有)|'
@@ -35,18 +36,29 @@ COMPLETION = re.compile(
     r'(?:完成|做完|做好|写完|整理完|搞定)(?:了|啦)'
     r'(?=$|[呀啊啦]|(?:这|那)一步|行动卡|你(?:说|给)|刚才|现在|想|感觉|心里|但|不)'
 )
-ACADEMIC_CONTEXT = re.compile(r'竞赛|比赛|课题|科研|实验|论文|文献|代码|调试|报错|程序|绩点|成绩|备考|复习|考试|挂科|学业|作业|课程')
+ACADEMIC_CONTEXT = re.compile(r'竞赛|比赛|课题|科研|实验|论文|文献|代码|调试|报错|程序|绩点|成绩|备考|复习|考试|挂科|学业|作业|课程|上课|听课')
 PRESSURE_CONTEXT = re.compile(r'担心|害怕|怕|焦虑|紧张|压力|不够好|怀疑|来不及|赶不上|太多|很多|卡|失败|不懂|不会|不通|受挫|没有回报|没进展|很慢|难|没过')
 CLARIFY_DETAIL = re.compile(
     r'因为|主要|最怕|最担心|担心|卡在|卡住|每次|每天|一.{0,12}就|总是|反复|'
     r'还有|只剩|截止|周[一二三四五六日天]|明天|后天|下周|'
     r'看不懂|不知道|找不到|集中不了|进不去|没进展|没有进展|'
-    r'报错|空值|数据库|实验|公式|章节|文献|结果|排名|及格|考砸|走神|刷手机|熬夜'
+    r'报错|空值|数据库|实验|公式|章节|文献|结果|排名|及格|考砸|走神|刷手机|熬夜|听不懂|跟不上|证明'
 )
+SHORT_DETAIL = re.compile(r'卡在|章节|公式|数据库|实验|截止|明天|后天|下周|证明|听不懂|跟不上')
 
 
 def unquoted_text(message):
     return re.sub(r'[“「"].*?[”」"]', '', message)
+
+
+def bounded_context(text, limit=500):
+    """Keep late corrections without increasing the existing context budget."""
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    marker = '\n[中间内容已省略]\n'
+    head = (limit - len(marker)) // 2
+    return text[:head] + marker + text[-(limit - len(marker) - head):]
 
 
 def update_topic(message, previous=''):
@@ -103,9 +115,11 @@ def has_action_context(message, history=None, memory=None):
     if not any(item.get('role') == 'assistant' for item in history):
         return False
     current = unquoted_text(message).strip()
-    if is_explicit_correction(current) or len(current) < 8 or not CLARIFY_DETAIL.search(current):
+    if is_explicit_correction(current) or len(current) < 4 or not CLARIFY_DETAIL.search(current):
         return False
-    if re.search(r'说不清|不知道怎么说|不知道原因|不确定|还没说完|等我说完|不是.{0,4}重点|[？?]|吗[。！!]*$', current):
+    if len(current) < 8 and not SHORT_DETAIL.search(current):
+        return False
+    if re.search(r'说不清|不知道怎么说|不知道怎么办|不知道原因|不确定|还没说完|等我说完|不是.{0,4}重点|[？?]|吗[。！!]*$', current):
         return False
     normalize = lambda text: re.sub(r'[\s，,。！？!?；;]', '', text)
     previous = [item.get('content', '') for item in history if item.get('role') == 'user']
@@ -207,7 +221,10 @@ def choose_phase(message, action_status='', memory=None, history=None):
     preference = current_preference(message)
     if preference == 'listen':
         return 'listen'
-    if DISTRESS.search(message) and preference != 'action':
+    # Ordinary distress can coexist with exploration after support; acute overwhelm cannot.
+    current = unquoted_text(message)
+    supported = any(item.get('role') == 'assistant' for item in (history or []))
+    if preference != 'action' and (OVERWHELMED.search(current) or (DISTRESS.search(current) and not supported)):
         return 'listen'
     if preference == 'clarify':
         return 'clarify'

@@ -1,5 +1,39 @@
 import re
 
+from .conversation import unquoted_text
+
+
+SCENARIO_STATEMENTS = {
+    'competition': r'我(?:现在|正在|最近|在|要|准备)*准备(?:学科)?竞赛|我(?:正在|在)参加(?:学科)?竞赛',
+    'research': r'我(?:现在|正在|最近|在)*(?:做科研|做课题|做实验|写论文)',
+    'coding': r'我(?:现在|正在|最近|在)*(?:写代码|调试代码|调试程序)',
+    'gpa': r'我(?:现在|最近)?(?:很)?(?:担心|焦虑)(?:自己的|我的)?绩点|我的绩点(?:下降|掉)',
+    'exam': r'我(?:现在|正在|最近|在)*(?:备考|准备考试|复习考试)',
+    'setback': r'我(?:这次|最近)?(?:考试没过|挂科了|考试不及格)',
+}
+
+
+def resolve_scenario(scenario, message, history=None, selected_action=''):
+    # Existing action identity wins over later mentions; never replace a chosen step.
+    if selected_action:
+        for key, card in ACTION_CARDS.items():
+            if selected_action in card['steps']:
+                return key
+        return scenario if scenario in ACTION_CARDS else 'general'
+    expressions = [item.get('content', '') for item in (history or []) if item.get('role') == 'user']
+    expressions.append(message)
+    for expression in reversed(expressions):
+        current = unquoted_text(expression)
+        # Questions and hypothetical/third-party reports are not self-reported context.
+        if re.search(r'如果|假如|要是|比如|例如|朋友说|同学说|[？?]', current):
+            continue
+        matches = {key for key, pattern in SCENARIO_STATEMENTS.items() if re.search(pattern, current)}
+        if len(matches) == 1:
+            return matches.pop()
+        if len(matches) > 1:
+            break
+    return scenario if scenario in ACTION_CARDS else 'general'
+
 
 def action_was_presented(step, history, memory=None):
     def normalize(text):

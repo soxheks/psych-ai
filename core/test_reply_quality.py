@@ -12,6 +12,60 @@ from .medical import medical_boundary_reply
 
 
 class ReplyQualityTests(SimpleTestCase):
+    def test_short_confirmation_keeps_a_new_exploration_question(self):
+        history = [
+            {'role': 'user', 'content': '最近上课总走神，我很焦虑。'},
+            {'role': 'assistant', 'content': '担心因此跟不上课程，对吗？'},
+        ]
+        raw = '这种担心会占用不少精力。最近一次走神之前，你正在想什么？当时是上午还是下午？'
+        for streaming in (False, True):
+            data, _ = self.request({'message': '对', 'history': json.dumps(history)}, raw, streaming)
+            self.assertIn('最近一次走神之前，你正在想什么？', data['reply'])
+            self.assertNotIn('当时是上午', data['reply'])
+            self.assertEqual(data['stage'], 'clarify')
+            self.assertIsNone(data['action_card'])
+
+    def test_confirmation_still_removes_repeated_and_leading_questions(self):
+        history = [{'role': 'assistant', 'content': '担心跟不上课程，对吗？'}]
+        for question in ('担心跟不上课程，对吗？', '所以你是怕落后，对吧？'):
+            for streaming in (False, True):
+                data, _ = self.request({'message': '对', 'history': json.dumps(history)}, question + '我们不用重新确认这一点。', streaming)
+                self.assertNotIn('？', data['reply'])
+
+    def test_pause_still_blocks_questions_and_action_suggestions(self):
+        for streaming in (False, True):
+            data, _ = self.request({'message': '我只想倾诉，别问我问题'}, '我在听。最近一次走神之前在想什么？建议你先写一段话。', streaming)
+            self.assertEqual(data['stage'], 'listen')
+            self.assertEqual(data['reply'], '我在听。')
+            self.assertIsNone(data['action_card'])
+
+    def test_classroom_concern_followed_by_detail_reaches_optional_action(self):
+        history = [
+            {'role': 'user', 'content': '最近上课走神很焦虑。'},
+            {'role': 'assistant', 'content': '最近一次走神之前，你正在想什么？'},
+        ]
+        for streaming in (False, True):
+            data, _ = self.request({'message': '每次听到不懂的地方，就一直想着自己又落后了。', 'history': json.dumps(history)}, '可以先缩小眼前要处理的范围，不必一次补上全部。', streaming)
+            self.assertEqual(data['stage'], 'control')
+            self.assertIsNotNone(data['action_card'])
+            self.assertEqual(data['action_status'], '')
+
+    def test_first_classroom_concern_has_an_entry_in_fallback(self):
+        for streaming in (False, True):
+            data, _ = self.request({'message': '最近上课走神很焦虑。'}, streaming=streaming, unavailable=True)
+            self.assertEqual(data['provider'], 'fallback')
+            self.assertIn('最近一次走神前', data['reply'])
+            self.assertEqual(data['reply'].count('？'), 1)
+            self.assertIsNone(data['action_card'])
+
+    def test_prompt_requests_contextual_continuation_without_personal_claims(self):
+        from .ai_client import PHASE_GUIDANCE
+        self.assertIn('容易回答的探索问题', PHASE_GUIDANCE['clarify'])
+        self.assertIn('不编造自己的亲身经历', SYSTEM_PROMPT)
+        prompt = build_user_prompt('对', '', [{'role': 'assistant', 'content': '担心跟不上，对吗？'}])
+        self.assertIn('可以提出一个尚未问过', prompt)
+        self.assertNotIn('本轮不再提问', prompt)
+
     def request(self, payload, raw='', streaming=False, unavailable=False):
         cache.clear()
         target = 'core.views.stream_ai_reply' if streaming else 'core.views.generate_ai_reply'

@@ -9,7 +9,7 @@
     <link rel="icon" href="{% static 'core/icons/message-circle-heart.svg' %}" type="image/svg+xml">
     <link rel="preload" as="image" type="image/webp" href="{% static 'core/images/companion-poses.webp' %}">
     <link rel="stylesheet" href="{% static 'core/css/page-transition.css' %}?v=4">
-    <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=guided-flow-14">
+    <link rel="stylesheet" href="{% static 'core/css/home.css' %}?v=guided-flow-16">
     <script defer src="{% static 'core/js/sound-effects.js' %}?v=3"></script>
     <script defer src="{% static 'core/js/page-transition.js' %}?v=4"></script>
 </head>
@@ -190,6 +190,7 @@
                     </div>
                     <div id="conversationChoices" class="conversation-choices" aria-label="对话节奏选择" hidden>
                         <span>此刻也可以</span>
+                        <button id="resumeGuidance" type="button" hidden><img src="{% static 'core/icons/sprout.svg' %}" alt="" width="15" height="15">一起梳理</button>
                         <button type="button" data-conversation-intent="stay">先陪我待一会儿</button>
                         <button type="button" data-conversation-intent="lighter">换个轻松话题</button>
                         <button type="button" data-conversation-intent="end">结束本次对话</button>
@@ -216,6 +217,7 @@
                                 <p id="memoryStatus" role="status">修改后仅影响后续对话；默认刷新即清除。</p>
                             </section>
                             <div class="data-settings-actions">
+                                <button id="saveAndExit" type="button" data-exit-url="{% url 'landing' %}"><img src="{% static 'core/icons/house.svg' %}" alt="" width="16" height="16">保存并返回首页</button>
                                 <button id="clearLocalProgress" type="button" hidden>清除本地记录</button>
                                 <p id="privacyStatus" role="status"></p>
                             </div>
@@ -385,6 +387,6 @@
         </section>
     </template>
     {% include 'core/_page_transition.html' %}
-<script src="{% static 'core/js/home.js' %}?v=guided-flow-22"></script>
+<script src="{% static 'core/js/home.js' %}?v=guided-flow-24"></script>
 </body>
 </html>

@@ -16,8 +16,8 @@ from django.views.decorators.http import require_GET, require_POST
 
 from .ai_client import AIUnavailable, generate_ai_reply, stream_ai_reply
 from .models import OutcomeRecord
-from .actions import action_was_presented, new_action_card
-from .conversation import END_REQUEST, choose_phase, is_explicit_correction, is_short_confirmation, parse_memory, remember, resolve_action_status, take_sentences
+from .actions import action_was_presented, new_action_card, resolve_scenario
+from .conversation import END_REQUEST, bounded_context, choose_phase, current_preference, is_explicit_correction, is_short_confirmation, parse_memory, remember, resolve_action_status, take_sentences
 from .medical import medical_boundary_reply
 
 
@@ -204,6 +204,7 @@ def chat(request):
         )
 
     phase = choose_phase(message, action_status, memory, history)
+    scenario = resolve_scenario(scenario, message, history, selected_action)
 
     if wants_stream:
         return stream_model_response(
@@ -372,7 +373,8 @@ class ReplyGuard:
             if self.phase != 'control' and '行动卡' in sentence:
                 continue
             if is_question:
-                if self.confirming or self.correcting or self.relief or self.question_count or question_is_repeated(sentence, self.questions):
+                reconfirming = self.confirming and bool(re.search(r'对吧|是吧|对不对|是不是|是吗|对吗|没错吧', sentence))
+                if reconfirming or self.correcting or self.relief or self.question_count or question_is_repeated(sentence, self.questions):
                     continue
                 self.question_count += 1
                 self.questions.append(sentence)
@@ -704,7 +706,7 @@ def parse_history(raw_history):
             continue
         content = item.get('content')
         if isinstance(content, str) and content.strip():
-            history.append({'role': item['role'], 'content': content.strip()[:500]})
+            history.append({'role': item['role'], 'content': bounded_context(content)})
     return history
 
 
@@ -760,9 +762,7 @@ def question_is_repeated(question, previous_questions):
         old = normalize_question(previous)
         if normalized == old or normalized in old or old in normalized:
             return True
-        shorter, longer = sorted((normalized, old), key=len)
-        if len(shorter) >= 8 and len(set(shorter) & set(longer)) / len(set(shorter)) >= 0.86:
-            return True
+        # Shared characters alone cannot distinguish opposite questions.
     return False
 
 
@@ -839,6 +839,10 @@ def build_supportive_reply(message, scenario, phase='clarify', selected_action='
             '你愿意把这些感受告诉我，我会认真听。此刻不用整理好语言，也不必急着解决问题。'
             '难受的时候可以先停一停，想说多少、说到哪里，都按你的节奏来。'
         )
+    if phase == 'clarify' and current_preference(message) == 'clarify':
+        concern = (memory or {}).get('concern', '').strip()[:160].rstrip('。！？!?')
+        anchor = f'你之前提到“{concern}”。' if concern and concern != message.strip().rstrip('。！？!?') else ''
+        return anchor + '我们可以一边照顾现在的感受，一边把问题看清。此刻最想先弄清的是哪一处？'
     scene = {
         'competition': '竞赛压力常常来自高强度比较和截止日期',
         'research': '科研和课题的不确定性会把人拖进“没有进展”的挫败感里',
@@ -882,7 +886,12 @@ def build_supportive_reply(message, scenario, phase='clarify', selected_action='
     if is_short_confirmation(message, history):
         return (
             '明白，刚才这一点已经确认了，不用再从头解释。'
-            '担心的事还没有因此成为定局；我们可以慢慢聊它现在带给你的感受，不急着要求你行动。'
+            '我们可以从一个具体片段看起：最近一次这种担心冒出来时，你正在做什么？'
+        )
+    if re.search(r'上课|听课|走神|注意力', message):
+        return (
+            '想跟上眼前的内容，注意力却跑开了，还要为此担心，确实会让人很累。'
+            '先不急着责怪自己：最近一次走神前，你正在听什么或想什么？'
         )
     return (
         f'{scene}。你提到“{excerpt}”，我能感觉到这件事正在占用你很多精力。'

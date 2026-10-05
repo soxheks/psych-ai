@@ -227,7 +227,10 @@ h2 { font-size: 20px; font-weight: 600; }
 .data-choice span { display: grid; gap: 2px; }
 .data-choice strong { color: #486353; font-size: 10px; font-weight: 650; }
 .data-choice small { color: #87958d; font-size: 8px; line-height: 1.55; }
-.data-settings-actions { display: flex; align-items: center; gap: 9px; min-height: 22px; }
+.data-settings-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; min-height: 22px; }
+.data-settings-actions #saveAndExit { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; padding: 8px 12px; font-size: 12px; color: #355c4d; background: #f2f8f4; border-color: #abcabb; }
+.data-settings-actions #saveAndExit:hover { background: #e5f1eb; }
+.data-settings-actions #saveAndExit:focus-visible { outline: 2px solid #477562; outline-offset: 3px; }
 .data-settings-actions button { min-height: 26px; padding: 0 8px; border: 1px solid #d4dfd7; border-radius: 6px; color: #6b786f; background: #fff; font-size: 9px; }
 .data-settings-actions p { margin: 0; color: #708579; font-size: 8px; line-height: 1.5; }
 .composer-data-settings { margin-top: 7px; }
@@ -436,6 +439,8 @@ textarea::placeholder { color: #96a299; }
 #sendButton img { filter: brightness(0) invert(1); transition: transform 220ms var(--ease); }
 #sendButton:disabled img { animation: send-wait 1.4s ease-in-out infinite; }
 .conversation-choices { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+.conversation-choices #resumeGuidance { display: inline-flex; align-items: center; justify-content: center; gap: 4px; background: #edf6f1; color: #355c4d; }
+.conversation-choices #resumeGuidance[hidden] { display: none; }
 .conversation-choices > span { margin-right: 2px; color: #89968f; font-size: 9px; }
 .conversation-choices button, .resume-conversation { min-height: 28px; padding: 0 9px; border: 1px solid #d7e1da; border-radius: 6px; color: #5f7569; background: #fafcf9; font-size: 9px; }
 .conversation-choices button:hover, .resume-conversation:hover { transform: translateY(-1px); border-color: #a9c1b1; background: #fff; }
@@ -665,7 +670,7 @@ textarea::placeholder { color: #96a299; }
     .conversation-choices > span { width: 100%; }
     .conversation-choices button { flex: 1 1 auto; min-width: 0; padding: 0 6px; }
     .composer-data-settings[open] .data-settings-body { grid-template-columns: 1fr; max-height: min(270px, 38vh); }
-    .composer-data-settings .data-settings-actions { grid-column: auto; align-items: flex-start; flex-direction: column; }
+    .composer-data-settings .data-settings-actions { grid-column: auto; min-width: 0; align-items: flex-start; flex-direction: column; flex-wrap: nowrap; }
     .memory-summary { grid-column: auto; grid-template-columns: 1fr; }
     .memory-summary header, .memory-summary > p { grid-column: auto; }
     .safety-dialog { width: calc(100% - 20px); max-height: calc(100dvh - 20px); }

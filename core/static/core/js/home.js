@@ -31,9 +31,11 @@ const safetyCardTemplate = document.querySelector('#safetyCardTemplate');
 const progressConsent = document.querySelector('#progressConsent');
 const metricsConsent = document.querySelector('#metricsConsent');
 const clearLocalProgress = document.querySelector('#clearLocalProgress');
+const saveAndExit = document.querySelector('#saveAndExit');
 const privacyStatus = document.querySelector('#privacyStatus');
 const conversationChoices = document.querySelector('#conversationChoices');
 const conversationIntentButtons = document.querySelectorAll('[data-conversation-intent]');
+const resumeGuidance = document.querySelector('#resumeGuidance');
 const resumeConversation = document.querySelector('#resumeConversation');
 const chatPanel = document.querySelector('.chat-panel');
 const memorySummary = document.querySelector('#memorySummary');
@@ -276,10 +278,10 @@ function removeSavedProgress(message = '') {
 }
 
 function saveProgress() {
-    if (!persistEnabled || restoringProgress) return;
+    if (!persistEnabled || restoringProgress) return false;
     if (supportMode || riskState) {
         removeSavedProgress('为保护你，安全支持模式的内容不会保存。');
-        return;
+        return false;
     }
     const history = conversationHistory.slice(-6).filter((item) => (
         ['user', 'assistant'].includes(item.role) && typeof item.content === 'string'
@@ -296,8 +298,9 @@ function saveProgress() {
         memory: cleanMemory(conversationMemory),
         savedAt: new Date().toISOString(),
     }));
-    if (clearLocalProgress) clearLocalProgress.hidden = !saved;
+    if (clearLocalProgress && saved) clearLocalProgress.hidden = false;
     setPrivacyStatus(saved ? '进度已仅保存在这台设备。' : '浏览器未允许保存，当前对话不受影响。');
+    return saved;
 }
 
 function recordOutcome(options = {}) {
@@ -397,6 +400,7 @@ function setConversationEnded(ended) {
 }
 
 function updateDialogueStage(stage, status = actionStatus) {
+    if (resumeGuidance) resumeGuidance.hidden = stage !== 'listen';
     if (!stageOrder.includes(stage)) return;
     flowStage = stage;
     const activeIndex = stageOrder.indexOf(stage);
@@ -913,6 +917,38 @@ progressConsent?.addEventListener('change', () => {
     }
 });
 
+saveAndExit?.addEventListener('click', () => {
+    const showNotice = (message) => {
+        document.querySelector('.composer-data-settings').open = true;
+        setPrivacyStatus(message);
+        announcement.textContent = message;
+    };
+    if (supportMode || riskState) {
+        showNotice('安全支持内容不会保存。请先联系能帮助你的人；需要离开时可以使用顶部首页按钮。');
+        return;
+    }
+    if (pending) {
+        showNotice('回复还在生成，请等回复结束后再保存并返回。');
+        return;
+    }
+    if (input.value.trim()) {
+        showNotice('输入框里还有未发送的文字。请先发送或自行清空，再保存并返回。');
+        input.focus();
+        return;
+    }
+    if (!persistEnabled) {
+        showNotice('请先确认开启“在此设备保存本次进度”；共用设备请勿开启。');
+        progressConsent.focus();
+        return;
+    }
+    applyMemoryEdits();
+    if (!writeStorage(PROGRESS_CONSENT_KEY, 'true') || !saveProgress()) {
+        showNotice('保存未成功，仍留在当前页。请检查浏览器的存储权限后重试。');
+        return;
+    }
+    window.location.assign(saveAndExit.dataset.exitUrl);
+});
+
 metricsConsent?.addEventListener('change', () => {
     setMetricsEnabled(metricsConsent.checked);
 });
@@ -931,6 +967,19 @@ clearConversationMemory?.addEventListener('click', () => {
     updateMemorySummary();
     saveProgress();
     announcement.textContent = '已清除 AI 提取的对话要点；屏幕上的最近对话仍会作为当前上下文。';
+});
+
+resumeGuidance?.addEventListener('click', () => {
+    if (pending || conversationEnded || supportMode) return;
+    if (input.value.trim()) {
+        announcement.textContent = '输入框里还有未发送的文字，请先发送或自行清空。';
+        input.focus();
+        return;
+    }
+    pendingIntent = '';
+    input.value = '我现在想一起梳理，看看最困扰我的部分。';
+    resizeInput();
+    form.requestSubmit();
 });
 
 conversationIntentButtons.forEach((button) => {
