@@ -43,6 +43,8 @@ class ReplyQualityTests(SimpleTestCase):
         history = [
             {'role': 'user', 'content': '最近上课走神很焦虑。'},
             {'role': 'assistant', 'content': '最近一次走神之前，你正在想什么？'},
+            {'role': 'user', 'content': '我一直在想着自己的表现。'},
+            {'role': 'assistant', 'content': '哪些课堂片段最容易让这种担心出现？'},
         ]
         for streaming in (False, True):
             data, _ = self.request({'message': '每次听到不懂的地方，就一直想着自己又落后了。', 'history': json.dumps(history)}, '可以先缩小眼前要处理的范围，不必一次补上全部。', streaming)

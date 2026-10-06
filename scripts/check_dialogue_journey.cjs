@@ -65,6 +65,10 @@ const output = process.env.JOURNEY_OUTPUT || 'output/dialogue-retest-2026-10-05'
             assert.equal(data.stage, 'clarify');
             assert.ok(data.reply.includes('？'), 'opening should offer a concrete continuation');
             data = await say('每天看书都会走神，脑子里一直想着考砸。');
+            assert.equal(data.stage, 'clarify');
+            assert.equal(data.action_card, null);
+            assert.ok(data.reply.includes('？'));
+            data = await say('卡在公式推导。');
             assert.equal(data.stage, 'control');
             assert.equal(data.action_card.title, '开始一个短专注');
             await page.getByRole('button', { name: '就从这一步开始', exact: true }).click();
@@ -75,6 +79,13 @@ const output = process.env.JOURNEY_OUTPUT || 'output/dialogue-retest-2026-10-05'
             assert.equal(await page.locator('.completion-summary').count(), 1);
             assert.ok(await page.locator('#dialogueStages li').last().evaluate(element => element.classList.contains('complete')));
             await page.screenshot({ path: `${output}/completed-${width}.png` });
+            if (process.env.JOURNEY_SHORT === 'true') {
+                assert.equal(outcomes, 0, 'synthetic tests must not create outcome records');
+                assert.equal(await page.evaluate(() => localStorage.getItem('mindmate-chat-progress-v1')), null);
+                await context.close();
+                console.log(`PASS ${width}px: two-question handoff, streamed reply, selection and completion`);
+                continue;
+            }
             data = await say('我好多了，今天先聊到这里。');
             assert.equal(data.ended, true);
             assert.ok(!data.reply.includes('？'));
@@ -109,6 +120,9 @@ const output = process.env.JOURNEY_OUTPUT || 'output/dialogue-retest-2026-10-05'
             data = await say('还是好累，想接着说说。');
             assert.equal(data.stage, 'clarify');
             data = await say('每次复习都卡在公式上，我还是很难受。');
+            assert.equal(data.stage, 'clarify');
+            assert.ok(data.reply.includes('？'));
+            data = await say('证明跟不上。');
             assert.equal(data.stage, 'control');
             assert.equal(data.action_status, '');
             assert.equal(outcomes, 0, 'synthetic tests must not create outcome records');

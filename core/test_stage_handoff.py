@@ -22,6 +22,7 @@ class StageHandoffTests(SimpleTestCase):
         memory = remember({}, first, [], '我听见这段时间的疲惫了。')
         history = [{'role': 'user', 'content': first}, {'role': 'assistant', 'content': '我听见这段时间的疲惫了。'}]
         self.assertEqual(choose_phase('还是好累，想接着说说。', memory=memory, history=history), 'clarify')
+        history = self.history(first)
         for streaming in (False, True):
             data, _ = self.request('我还是很难受，每天复习都卡在公式上。', history, memory, streaming)
             self.assertEqual(data['stage'], 'control')
@@ -80,8 +81,102 @@ class StageHandoffTests(SimpleTestCase):
     def history(self, concern='我在备考，越临近考试越难集中注意力。'):
         return [
             {'role': 'user', 'content': concern},
+            {'role': 'assistant', 'content': '现在最困扰你的是过程还是结果？'},
+            {'role': 'user', 'content': '过程让我很焦虑。'},
             {'role': 'assistant', 'content': '现在最影响你复习的是哪一处？'},
         ]
+
+    def test_one_answer_still_explores_before_proposing_a_step(self):
+        history = self.history()[:2]
+        data, _ = self.request('每天复习都卡在公式推导上。', history)
+        self.assertEqual(data['stage'], 'clarify')
+        self.assertIsNone(data['action_card'])
+
+    def test_brief_concern_is_enough_after_three_exploration_responses(self):
+        history = self.history('我上课走神。')
+        history[2]['content'] = '不知道原因。'
+        history.extend([
+            {'role': 'user', 'content': '说不清。'},
+            {'role': 'assistant', 'content': '最容易分心的是哪一个片段？'},
+        ])
+        data, _ = self.request('还是说不清', history)
+        self.assertEqual(data['stage'], 'control')
+        self.assertIsNotNone(data['action_card'])
+
+    def test_two_answers_can_bridge_on_short_confirmation_using_prior_detail(self):
+        history = self.history()
+        history[2]['content'] = '每天复习都卡在公式推导上。'
+        history[3]['content'] = '所以最影响你的是推导卡住之后的焦虑，对吗？'
+        for streaming in (False, True):
+            data, model = self.request('对', history, streaming=streaming)
+            self.assertEqual(data['stage'], 'control')
+            self.assertIsNotNone(data['action_card'])
+            self.assertEqual(model.call_args.kwargs['phase'], 'control')
+            self.assertEqual(data['action_status'], '')
+
+    def test_third_answer_with_limited_information_bridges_without_a_method_request(self):
+        history = self.history()
+        history[2]['content'] = '我也说不清楚。'
+        second, _ = self.request('不知道原因', history)
+        self.assertEqual(second['stage'], 'clarify')
+        history.extend([
+            {'role': 'user', 'content': '不知道原因'},
+            {'role': 'assistant', 'content': '最近有什么事情让这种感觉变得明显？'},
+        ])
+        for streaming in (False, True):
+            data, _ = self.request('还是不确定', history, second['memory'], streaming)
+            self.assertEqual(data['stage'], 'control')
+            self.assertIsNotNone(data['action_card'])
+            self.assertEqual(data['action_status'], '')
+            self.assertNotEqual(data['memory']['preference'], 'action')
+            prompt = build_user_prompt('还是不确定', 'exam', history, 'control', memory=data['memory'])
+            self.assertIn('不补造原因', prompt)
+
+    def test_repeated_questions_and_unanswered_questions_do_not_fill_the_budget(self):
+        history = self.history()
+        history[1]['content'] = history[3]['content']
+        self.assertEqual(choose_phase('每天卡在公式推导上', history=history), 'clarify')
+        memory = {'questions': ['第一问？', '第二问？', '第三问？']}
+        self.assertEqual(choose_phase('每天卡在公式推导上', history=self.history()[:2], memory=memory), 'clarify')
+
+    def test_answer_budget_survives_bounded_history_and_keeps_user_boundaries(self):
+        memory = remember({}, '卡在公式推导', self.history())
+        history = [{'role': 'user', 'content': '我在备考，很焦虑。'}, {'role': 'assistant', 'content': '我听见了。'}]
+        self.assertEqual(choose_phase('嗯', history=history, memory=memory), 'control')
+        for message in ('还没说完', '你理解错了，我说的是同伴关系。', '先别给建议。', '一直哭，脑子很乱。'):
+            self.assertNotEqual(choose_phase(message, history=history, memory=memory), 'control')
+
+    def test_real_fallback_answers_two_different_questions_then_bridges(self):
+        for streaming in (False, True):
+            history, memory, replies = [], {}, []
+            for message, expected in (
+                ('我在备考，越临近考试越难集中注意力。', 'clarify'),
+                ('每天看书都会走神，脑子里一直想着考砸。', 'clarify'),
+                ('卡在公式推导。', 'control'),
+            ):
+                cache.clear()
+                target = 'core.views.stream_ai_reply' if streaming else 'core.views.generate_ai_reply'
+                with patch(target, side_effect=AIUnavailable()):
+                    response = self.client.post(reverse('chat'), {
+                        'message': message, 'scenario': 'exam', 'history': json.dumps(history[-6:]),
+                        'memory': json.dumps(memory), 'stream': 'true' if streaming else 'false',
+                    })
+                    if streaming:
+                        events = [json.loads(item) for item in response.streaming_content]
+                        data = events[-1]
+                        self.assertEqual(data['reply'], ''.join(item['text'] for item in events if item['type'] == 'delta'))
+                    else:
+                        data = response.json()
+                self.assertEqual(data['stage'], expected)
+                memory = data['memory']
+                replies.append(data['reply'])
+                history.extend([{'role': 'user', 'content': message}, {'role': 'assistant', 'content': data['reply']}])
+            self.assertEqual(replies[0].count('？'), 1)
+            self.assertEqual(replies[1].count('？'), 1)
+            self.assertNotEqual(replies[0], replies[1])
+            self.assertNotIn('？', replies[2])
+            self.assertIsNotNone(data['action_card'])
+            self.assertEqual(data['action_status'], '')
 
     def request(self, message, history, memory=None, streaming=False, **fields):
         cache.clear()

@@ -37,7 +37,7 @@ COMPLETION = re.compile(
     r'(?=$|[呀啊啦]|(?:这|那)一步|行动卡|你(?:说|给)|刚才|现在|想|感觉|心里|但|不)'
 )
 ACADEMIC_CONTEXT = re.compile(r'竞赛|比赛|课题|科研|实验|论文|文献|代码|调试|报错|程序|绩点|成绩|备考|复习|考试|挂科|学业|作业|课程|上课|听课')
-PRESSURE_CONTEXT = re.compile(r'担心|害怕|怕|焦虑|紧张|压力|不够好|怀疑|来不及|赶不上|太多|很多|卡|失败|不懂|不会|不通|受挫|没有回报|没进展|很慢|难|没过')
+PRESSURE_CONTEXT = re.compile(r'担心|害怕|怕|焦虑|紧张|压力|不够好|怀疑|来不及|赶不上|太多|很多|卡|失败|不懂|不会|不通|受挫|没有回报|没进展|很慢|难|没过|走神|分心|疲惫|好累')
 CLARIFY_DETAIL = re.compile(
     r'因为|主要|最怕|最担心|担心|卡在|卡住|每次|每天|一.{0,12}就|总是|反复|'
     r'还有|只剩|截止|周[一二三四五六日天]|明天|后天|下周|'
@@ -108,26 +108,49 @@ def is_explicit_correction(message):
     ))
 
 
+def exploration_answers(message, history=None, memory=None):
+    """Count distinct questions with user responses, including bounded older context."""
+    context = remember(memory or {}, message, history or [])
+    answers = {}
+    for pair in context.get('answered', []):
+        key = re.sub(r'[\s，,。！？!?；;：:]', '', pair['question'])
+        if key:
+            answers[key] = pair['answer']
+    return list(answers.values())
+
+
 def has_action_context(message, history=None, memory=None):
-    """Offer an optional step after a concern plus new detail, never from turn count alone."""
+    """Bridge after two useful questions, or three responses with limited information."""
     history = history or []
     memory = memory or {}
     if not any(item.get('role') == 'assistant' for item in history):
         return False
     current = unquoted_text(message).strip()
-    if is_explicit_correction(current) or len(current) < 4 or not CLARIFY_DETAIL.search(current):
+    if is_explicit_correction(current):
         return False
-    if len(current) < 8 and not SHORT_DETAIL.search(current):
+    if re.search(r'还没说完|等我说完|不是.{0,4}重点|[？?]|吗[。！!]*$', current):
         return False
-    if re.search(r'说不清|不知道怎么说|不知道怎么办|不知道原因|不确定|还没说完|等我说完|不是.{0,4}重点|[？?]|吗[。！!]*$', current):
+    answers = exploration_answers(message, history, memory)
+    if len(answers) < 2:
         return False
     normalize = lambda text: re.sub(r'[\s，,。！？!?；;]', '', text)
     previous = [item.get('content', '') for item in history if item.get('role') == 'user']
     previous.extend(memory.get('facts', []))
+    previous.append(memory.get('concern', ''))
     previous = [unquoted_text(text) for text in previous
-                if len(text) >= 8 and normalize(text) not in (normalize(message), normalize(message[:180]))]
+                if len(text) >= 4 and normalize(text) not in (normalize(message), normalize(message[:180]))]
     previous_context = '。'.join(previous)
-    return bool(ACADEMIC_CONTEXT.search(previous_context) and PRESSURE_CONTEXT.search(previous_context + current))
+    if not (ACADEMIC_CONTEXT.search(previous_context) and PRESSURE_CONTEXT.search(previous_context + current)):
+        return False
+    if len(answers) >= 3:
+        return True
+    for answer in answers:
+        detail = unquoted_text(answer)
+        if re.search(r'说不清|不知道怎么说|不知道怎么办|不知道原因|不确定', detail):
+            continue
+        if len(detail) >= 4 and CLARIFY_DETAIL.search(detail) and (len(detail) >= 8 or SHORT_DETAIL.search(detail)):
+            return True
+    return False
 
 
 def current_preference(message):

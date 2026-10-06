@@ -17,7 +17,7 @@ from django.views.decorators.http import require_GET, require_POST
 from .ai_client import AIUnavailable, generate_ai_reply, stream_ai_reply
 from .models import OutcomeRecord
 from .actions import action_was_presented, new_action_card, resolve_scenario
-from .conversation import END_REQUEST, bounded_context, choose_phase, current_preference, is_explicit_correction, is_short_confirmation, parse_memory, remember, resolve_action_status, take_sentences
+from .conversation import END_REQUEST, bounded_context, choose_phase, current_preference, exploration_answers, is_explicit_correction, is_short_confirmation, parse_memory, remember, resolve_action_status, take_sentences
 from .medical import medical_boundary_reply
 
 
@@ -883,11 +883,21 @@ def build_supportive_reply(message, scenario, phase='clarify', selected_action='
             f'你正在尝试“{action}”。你提到“{excerpt}”，这已经让我知道当前进展在哪里了。\n\n'
             '接下来你更需要继续做一点，还是先把遇到的阻碍拆小？'
         )
-    if is_short_confirmation(message, history):
-        return (
-            '明白，刚才这一点已经确认了，不用再从头解释。'
-            '我们可以从一个具体片段看起：最近一次这种担心冒出来时，你正在做什么？'
-        )
+    answered_count = len(exploration_answers(message, history, memory))
+    if answered_count:
+        questions = [
+            '最近一次这种担心冒出来时，你正在做什么？',
+            '在你刚才说的情境里，最让你卡住的具体部分是什么？',
+            '眼前最压着你的是事情本身、时间紧，还是对自己的要求？',
+        ]
+        previous_questions = list((memory or {}).get('questions', []))
+        for item in history or []:
+            if item.get('role') == 'assistant':
+                previous_questions.extend(re.findall(r'[^。！？!?]+[？?]', item.get('content', '')))
+        candidates = questions[min(answered_count, 2):] + questions[:min(answered_count, 2)]
+        question = next((item for item in candidates if not question_is_repeated(item, previous_questions)), '')
+        prefix = '明白，刚才这一点已经确认了，不用再从头解释。' if is_short_confirmation(message, history) else '你说的这一点我记住了，不需要一下子把所有原因想清楚。'
+        return prefix + question
     if re.search(r'上课|听课|走神|注意力', message):
         return (
             '想跟上眼前的内容，注意力却跑开了，还要为此担心，确实会让人很累。'
@@ -896,6 +906,6 @@ def build_supportive_reply(message, scenario, phase='clarify', selected_action='
     return (
         f'{scene}。你提到“{excerpt}”，我能感觉到这件事正在占用你很多精力。'
         '我们先不急着解决全部。\n\n'
-        '如果把它分开看：现在已经发生的事实是什么，而你最担心接下来会发生什么？'
-        '你可以只说其中比较容易回答的一部分。'
+        '现在最让你担心的是哪一件具体的事？'
+        '可以只说眼前最容易描述的一部分。'
     )

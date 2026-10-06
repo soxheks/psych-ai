@@ -4,7 +4,7 @@ import urllib.request
 
 from django.conf import settings
 
-from .conversation import bounded_context, current_preference, has_action_context, is_explicit_correction, is_short_confirmation, parse_memory
+from .conversation import bounded_context, current_preference, exploration_answers, has_action_context, is_explicit_correction, is_short_confirmation, parse_memory
 from .actions import action_was_presented, build_action_card
 
 
@@ -59,7 +59,8 @@ PHASE_GUIDANCE = {
         '进入这一步不代表情绪已经好了；可以一边安抚，一边具体探索，不要求用户先完全平静。'
         '第一次表达时简短接住具体感受，然后给一个与原话有关、容易回答的探索问题；'
         '已有足够信息时提供具体理解，不重复确认。用户回应后沿着这个回应继续，而不是只说“我在听”。'
-        '只有确实缺少关键信息时才问一个新的具体问题，已确认的内容不能换个说法再问。'
+        '整体用两到三个不同的问题完成倾听与梳理，每轮最多一个，沿着用户回答追问具体阻碍、担心或现实限制。'
+        '已有信息够用时不凑满三个；已确认的内容不能换个说法再问。'
         '还不清楚困扰时，问最影响当下的一处，不连续只说“我在听”。暂时不要给任务清单。'
     ),
     'control': (
@@ -204,12 +205,20 @@ def build_user_prompt(message, scenario, history=None, phase='clarify', selected
     if proposed and action_was_presented(proposed['step'], history, memory):
         action_context += '这个候选动作已在前文展示，本轮不再发卡或重复原文；回答用户对它的疑问，给出更具体的解释。\n'
     turn_guidance = ''
+    if phase == 'clarify':
+        answered_count = len(exploration_answers(message, history, memory))
+        turn_guidance += (
+            f'当前已回应 {answered_count} 个不同的探索问题。'
+            '只补一个仍未知、会影响小步骤的问题，不复问已知的事实；'
+            '若还说不清，不要求找出完整原因，第三个探索回应后根据已知信息提供保守的小步骤。\n'
+        )
     if phase == 'control' and not action_status and current_preference(message) != 'action' and has_action_context(message, history, memory):
         turn_guidance += (
-            '本轮是从已聊清的困扰自然过渡到可控部分，并非用户主动索要任务。'
+            '本轮已经完成两到三个探索问题，应该根据已有情报主动过渡到可控部分，并非用户主动索要任务。'
             '用一句话承接最新的具体困难，再解释候选动作为什么能把眼前的问题缩小。'
             '以“可以先看看这个小步骤，暂时不做也没关系”的可选语气收束，允许继续倾诉。'
-            '不要说用户已经准备好、愿意行动或同意执行，不再继续盘问原因，也不要求输入特定口令。\n'
+            '不要说用户已经准备好、愿意行动或同意执行，不再继续盘问原因，也不要求输入特定口令。'
+            '用户说不清的部分仍是未知，不补造原因；只根据明确说出的困扰解释低负担、可调整的候选步骤。\n'
         )
     if is_explicit_correction(message):
         turn_guidance += (
