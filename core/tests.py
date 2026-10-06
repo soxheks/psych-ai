@@ -43,7 +43,7 @@ class PageTests(TestCase):
         self.assertContains(response, '我愿意再次使用')
         self.assertContains(response, '留给下次的方法')
         self.assertContains(response, '愿意留下匿名体验反馈吗')
-        self.assertContains(response, 'home.js?v=guided-flow-24')
+        self.assertContains(response, 'home.js?v=guided-flow-25')
         self.assertContains(response, 'id="resumeGuidance"')
         self.assertContains(response, 'id="saveAndExit"')
         self.assertContains(response, 'home.css?v=guided-flow-16')

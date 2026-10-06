@@ -81,6 +81,10 @@ def resolve_action_status(message, selected_action, current):
             continue
         for clause in re.split(r'[，,]|但是|不过', sentence):
             clause = re.sub(r'\s+', '', clause)
+            if (current != 'completed' and re.search(r'做不完|做不了|完成不了|做不到|卡住了|这一步太难|还是太难', clause)
+                    and not re.search(r'不是|并非|没卡住|没有卡住', clause)):
+                resolved = 'adjusting' if '太难' in clause else 'stuck'
+                continue
             clause = re.sub(r'(?:并不是|不是|并非)(?:还|尚)?没(?:有)?开始', '', clause)
             if re.search(r'(?:还没|没有|没|未)(?:完成|做完|做好|开始|做)', clause):
                 resolved = current
@@ -197,6 +201,15 @@ def parse_memory(value):
     ] if isinstance(pairs, list) else []
     result['preference'] = value.get('preference') if value.get('preference') in ('listen', 'clarify', 'action') else ''
     result['topic'] = value.get('topic') if value.get('topic') in ('personal', 'academic') else ''
+    recovery = value.get('action_recovery')
+    if isinstance(recovery, dict) and recovery.get('state') in ('comforted', 'offered'):
+        level = recovery.get('level')
+        if type(level) is int and 0 <= level <= 2:
+            result['action_recovery'] = {
+                'step': clean_text(recovery.get('step'), 500),
+                'base_step': clean_text(recovery.get('base_step'), 500),
+                'level': level, 'state': recovery['state'],
+            }
     return result
 
 

@@ -243,18 +243,20 @@ class GuardedStreamTests(SimpleTestCase):
         self.assertEqual(normal['reply'], reply)
         self.assertEqual(normal['action_card'], card)
 
-    def test_lighter_card_is_also_the_only_proposed_action(self):
+    def test_lighter_request_gets_one_comfort_turn_before_revision(self):
         from .actions import build_action_card
         old = build_action_card('coding')['step']
         events = self.events([('不必勉强自己。你可以把预期结果写成一句很短的话。1. 先看注释。2. 重写整个项目。', 'doubao')],
             message='这一步太难', scenario='coding', selected_action=old, action_status='adjusting')
         reply = self.visible(events)
-        self.assertNotEqual(events[-1]['action_card']['step'], old)
-        self.assertNotIn(events[-1]['action_card']['step'], reply)
-        self.assertIn(events[-1]['action_card']['step'], events[-1]['memory']['presented_actions'])
+        self.assertIsNone(events[-1]['action_card'])
+        self.assertIsNone(events[-1]['action_revision'])
+        self.assertEqual(events[-1]['stage'], 'action')
+        self.assertEqual(events[-1]['memory']['action_recovery']['state'], 'comforted')
         self.assertNotIn('注释', reply)
         self.assertNotIn('重写整个项目', reply)
-        self.assertIn('你可以把预期结果写成一句很短的话', reply)
+        self.assertNotIn('你可以把预期结果写成一句很短的话', reply)
+        self.assertIn('不必勉强自己', reply)
 
     def events(self, chunks, **payload):
         with patch('core.views.stream_ai_reply', return_value=iter(chunks)):

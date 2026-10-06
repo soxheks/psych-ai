@@ -190,6 +190,12 @@ function cleanMemory(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
     const text = (item, limit = 180) => typeof item === 'string' ? item.trim().slice(0, limit) : '';
     const list = (items, count) => Array.isArray(items) ? items.slice(-count).map((item) => text(item)).filter(Boolean) : [];
+    const recovery = value.action_recovery;
+    const actionRecovery = recovery && typeof recovery === 'object'
+        && ['comforted', 'offered'].includes(recovery.state)
+        && Number.isInteger(recovery.level) && recovery.level >= 0 && recovery.level <= 2
+        ? { step: text(recovery.step, 500), base_step: text(recovery.base_step, 500), level: recovery.level, state: recovery.state }
+        : null;
     return {
         concern: text(value.concern, 240),
         facts: list(value.facts, 8),
@@ -200,6 +206,7 @@ function cleanMemory(value) {
         })).filter((item) => item.question && item.answer) : [],
         preference: ['listen', 'clarify', 'action'].includes(value.preference) ? value.preference : '',
         topic: ['personal', 'academic'].includes(value.topic) ? value.topic : '',
+        ...(actionRecovery ? { action_recovery: actionRecovery } : {}),
     };
 }
 
@@ -397,6 +404,7 @@ function setConversationEnded(ended) {
     input.placeholder = conversationEnded
         ? '本次对话已结束，需要时可以再继续。'
         : '从一句话开始，说说你的心情吧…';
+    refreshActionControls();
 }
 
 function updateDialogueStage(stage, status = actionStatus) {
@@ -442,6 +450,43 @@ function syncCompletedActionCard() {
     card.querySelectorAll('.action-progress-actions button').forEach((button) => { button.disabled = true; });
 }
 
+function refreshActionControls() {
+    messages.querySelectorAll('.action-card.is-accepted').forEach((card) => {
+        const active = card.querySelector('.action-step')?.textContent === selectedAction;
+        const locked = pending || conversationEnded || supportMode || !active || actionStatus === 'completed';
+        const recovery = conversationMemory.action_recovery;
+        const canSimplify = active && recovery?.step === selectedAction && recovery.state === 'comforted'
+            && ['stuck', 'adjusting'].includes(actionStatus);
+        card.querySelector('.action-start').textContent = canSimplify ? '试试简化版'
+            : (active && actionStatus === 'started' ? '正在进行' : '开始这一步');
+        card.classList.toggle('is-following-up', pending && active);
+        card.querySelectorAll('.action-progress-actions button').forEach((button) => {
+            button.disabled = locked || (button.classList.contains('action-start') && actionStatus === 'started');
+        });
+    });
+}
+
+function applyActionRevision(revision) {
+    if (!revision || revision.from_step !== selectedAction || typeof revision.step !== 'string'
+        || !revision.step.trim() || revision.step.length > 500 || actionStatus === 'completed') return;
+    const card = [...messages.querySelectorAll('.action-card.is-accepted')]
+        .reverse().find((item) => item.querySelector('.action-step')?.textContent === selectedAction);
+    if (!card) return;
+    selectedAction = revision.step;
+    card.dataset.proposedStep = selectedAction;
+    card.querySelector('.action-step').textContent = selectedAction;
+    card.querySelector('h3').textContent = revision.title || '更轻的一小步';
+    card.querySelector('.action-duration').textContent = revision.duration || '约 2 分钟';
+    card.querySelector('.action-note').textContent = revision.note || '做到这里就可以停下来。';
+    card.classList.remove('is-running', 'is-stuck', 'is-adjusting', 'is-complete');
+    card.querySelector('.action-start').textContent = '开始这一步';
+    card.querySelector('.action-next-status').textContent = '这一步已经变轻了。先按这个小范围尝试，做到这里就可以停。';
+    conversationMemory.presented_actions = [...new Set([
+        ...(conversationMemory.presented_actions || []), selectedAction,
+    ])].slice(-12);
+    refreshActionControls();
+}
+
 function renderActionCard(card, restoredStatus = '') {
     if (!card || typeof card.step !== 'string' || !actionCardTemplate) return;
     messages.querySelectorAll('.action-card:not(.is-accepted)').forEach((previous) => {
@@ -476,11 +521,13 @@ function renderActionCard(card, restoredStatus = '') {
         scrollMessages();
     });
     accept.addEventListener('click', () => {
+        if (pending || conversationEnded || supportMode) return;
         actionCard.classList.add('is-accepted');
         accept.disabled = true;
         accept.textContent = '这一步，已经选好了';
         conversationHistory.push({ role: 'user', content: '我选择的今日行动是：' + steps[stepIndex] });
         selectedAction = steps[stepIndex];
+        delete conversationMemory.action_recovery;
         conversationMemory.presented_actions = [...new Set([
             ...(conversationMemory.presented_actions || []), selectedAction,
         ])].slice(-12);
@@ -490,27 +537,43 @@ function renderActionCard(card, restoredStatus = '') {
         announcement.textContent = '已选定今日行动：' + steps[stepIndex];
         next.hidden = false;
         saveProgress();
+        refreshActionControls();
         scrollMessages(true);
     });
     start.addEventListener('click', () => {
+        if (pending || conversationEnded || supportMode || step.textContent !== selectedAction || actionStatus === 'completed') return;
+        if (conversationMemory.action_recovery?.step === selectedAction
+            && conversationMemory.action_recovery.state === 'comforted'
+            && ['stuck', 'adjusting'].includes(actionStatus)) {
+            followUp('请帮我把刚才这一步拆成更小、更容易尝试的版本。', 'is-adjusting',
+                '我们把原来那一步再缩小，做到一个小开头就可以停。', 'adjusting');
+            return;
+        }
+        actionCard.classList.remove('is-stuck', 'is-adjusting');
         actionCard.classList.add('is-running');
         actionStatus = 'started';
         start.disabled = true;
         start.textContent = '正在进行';
-        nextStatus.textContent = '已经开始。先试十分钟，不用追求做完；有任何进展或阻碍，都可以回来告诉我。';
+        nextStatus.textContent = '已经开始。按这个小范围尝试，做到这里就可以停；有任何进展或阻碍，都可以回来告诉我。';
         companionStatus.textContent = '我会在这里，等你按自己的节奏回来';
         announcement.textContent = '行动已经开始。完成或卡住时，可以选择下面的按钮继续。';
         saveProgress();
     });
     function followUp(message, state, status, nextActionStatus) {
-        if (pending || actionCard.classList.contains('is-following-up')) return;
+        if (pending || conversationEnded || supportMode || step.textContent !== selectedAction || actionStatus === 'completed') return;
+        if (input.value.trim()) {
+            announcement.textContent = '输入框里还有未发送的文字，请先发送或自行清空。';
+            input.focus();
+            return;
+        }
+        actionCard.classList.remove('is-running', 'is-stuck', 'is-adjusting', 'is-complete');
         actionCard.classList.add('is-following-up', state);
         nextStatus.textContent = status;
         actionStatus = nextActionStatus;
-        updateDialogueStage(state === 'is-adjusting' ? 'control' : 'action', actionStatus);
+        updateDialogueStage('action', actionStatus);
         saveProgress();
         if (actionStatus === 'completed') recordOutcome();
-        if (!submitGuidedUpdate(message, state === 'is-adjusting' ? 'control' : 'action')) {
+        if (!submitGuidedUpdate(message, 'action')) {
             actionCard.classList.remove('is-following-up', state);
         }
     }
@@ -538,6 +601,10 @@ function renderActionCard(card, restoredStatus = '') {
         accept.disabled = true;
         accept.textContent = '这一步，已经选好了';
         next.hidden = false;
+        if (conversationMemory.action_recovery?.step === selectedAction && conversationMemory.action_recovery.level > 0) {
+            actionCard.querySelector('.action-duration').textContent = conversationMemory.action_recovery.level === 1 ? '约 2 分钟' : '约半分钟';
+            nextStatus.textContent = '这是上次缩小的那一步。按这个小范围继续，做到这里就可以停。';
+        }
         if (restoredStatus === 'started') {
             actionCard.classList.add('is-running');
             start.disabled = true;
@@ -547,16 +614,17 @@ function renderActionCard(card, restoredStatus = '') {
             actionCard.classList.add('is-following-up', 'is-complete');
             nextStatus.textContent = '这一步已经完成。';
         } else if (restoredStatus === 'stuck') {
-            actionCard.classList.add('is-following-up', 'is-stuck');
+            actionCard.classList.add('is-stuck');
             nextStatus.textContent = '上次停在了“卡住”。可以继续说说阻碍，不用重新开始。';
         } else if (restoredStatus === 'adjusting') {
-            actionCard.classList.add('is-following-up', 'is-adjusting');
+            actionCard.classList.add('is-adjusting');
             nextStatus.textContent = '上次决定把步骤继续缩小。';
         }
-        if (['completed', 'stuck', 'adjusting'].includes(restoredStatus)) {
+        if (restoredStatus === 'completed') {
             actionCard.querySelectorAll('.action-progress-actions button').forEach((button) => { button.disabled = true; });
         }
     }
+    refreshActionControls();
     scrollMessages(true);
 }
 
@@ -1184,6 +1252,7 @@ form.addEventListener('submit', async (event) => {
     greetingActive = false;
     resetCharacterLook();
     pending = true;
+    refreshActionControls();
     sendButton.disabled = true;
     voicePreview.disabled = true;
     sendButton.setAttribute('aria-label', '正在回复');
@@ -1264,6 +1333,7 @@ form.addEventListener('submit', async (event) => {
         }
         if (typeof data.action_status === 'string') actionStatus = data.action_status;
         if (!supportMode) {
+            if (!data.interrupted) applyActionRevision(data.action_revision);
             riskState = '';
             updateDialogueStage(data.stage, actionStatus);
             syncCompletedActionCard();
@@ -1351,6 +1421,7 @@ form.addEventListener('submit', async (event) => {
         controller.abort();
         stopWaitingProgress();
         pending = false;
+        refreshActionControls();
         revealing = false;
         sendButton.disabled = conversationEnded;
         voicePreview.disabled = supportMode;

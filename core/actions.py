@@ -17,7 +17,8 @@ def resolve_scenario(scenario, message, history=None, selected_action=''):
     # Existing action identity wins over later mentions; never replace a chosen step.
     if selected_action:
         for key, card in ACTION_CARDS.items():
-            if selected_action in card['steps']:
+            variants = [step for pair in SIMPLE_ACTIONS.get(key, []) for step in pair]
+            if selected_action in [*card['steps'], *variants]:
                 return key
         return scenario if scenario in ACTION_CARDS else 'general'
     expressions = [item.get('content', '') for item in (history or []) if item.get('role') == 'user']
@@ -113,6 +114,56 @@ ACTION_CARDS = {
         ],
     },
 }
+
+
+# Each pair shrinks the same action, rather than substituting a different task.
+SIMPLE_ACTIONS = {
+    'competition': [
+        ('只看截止最近的一项任务，写下一个开头，花两分钟就停。', '只写出截止最近的那项任务名称，写到这里就可以停。'),
+        ('只写一项必须完成的竞赛任务，暂时不用分类其他任务。', '只圈出当前最要紧的一个任务。'),
+        ('只写一句最想向队友确认的问题，不需要现在发送。', '只写下那处不确定的关键词。'),
+    ],
+    'research': [
+        ('只写一句已经尝试的方法，暂时不用整理全部假设和验证计划。', '只记下最近一次尝试的名称或关键词。'),
+        ('只看一段记录或文献，记下一个要点，两分钟就停。', '只圈出一条想保留的记录或文献句子。'),
+        ('只写一句目前卡住的问题，暂时不用联系任何人。', '只写下卡住位置的一个关键词。'),
+    ],
+    'coding': [
+        ('只记录报错信息和触发它的一个动作，暂时不用完成最小复现。', '只抄下最后一行报错，做到这里就可以停。'),
+        ('只写一句实际结果，暂时不用追查全部差异。', '只记下一个与预期不一样的结果。'),
+        ('先离开屏幕半分钟，回来只看一处输入，不要求修好。', '只把视线从屏幕移开，停半分钟。'),
+    ],
+    'gpa': [
+        ('只选一门想改善的课，写下一件能试两分钟的事。', '只写出那门课的名称，暂时不用拟计划。'),
+        ('先关掉成绩比较页面，只写一件自己已经做到的事。', '只关掉成绩比较页面，先停在这里。'),
+        ('只写一句学习方法的问题，暂时不用发给老师或同学。', '只记下想问的学习方法关键词。'),
+    ],
+    'exam': [
+        ('只看一条公式或一小段内容，专注两分钟，到点就停。', '只读一条公式或一句内容，读完就可以停。'),
+        ('只看一道题的第一步，试两分钟，不要求做完整题。', '只读一道题的题干，圈出一个已知条件。'),
+        ('只选一小段复习内容，看两分钟就停。', '只圈出今天想看的那一小段内容。'),
+    ],
+    'setback': [
+        ('只写下这次结果让你知道的一条信息，暂时不拟调整计划。', '只记下这次最想回看的一个细节。'),
+        ('只写一句这次没做好的具体事情，不评价自己整个人。', '只写下那个具体事情的名称。'),
+        ('只写一句想告诉可信任的人的事实，暂时不用发出。', '只选一个愿意联系的可信任的人，不必现在联系。'),
+    ],
+    'general': [
+        ('只开始原来那件事的一个小开头，两分钟就停。', '只为原来那件事做一个准备动作，做到这里就停。'),
+        ('只写一句脑子里的担心，暂时不用想办法处理。', '只记下这份担心的一个关键词。'),
+        ('只喝一小口水或慢慢呼气一次，不需要立刻决定下一件事。', '只慢慢呼气一次，按自己的节奏停下来。'),
+    ],
+}
+
+
+def simplify_action(selected_action, scenario, level=1):
+    for key, card in ACTION_CARDS.items():
+        for index, original in enumerate(card['steps']):
+            pair = SIMPLE_ACTIONS[key][index]
+            if selected_action in (original, *pair):
+                return pair[min(max(level, 1), 2) - 1]
+    # Unknown restored actions keep their identity rather than inventing a new task.
+    return f'只为“{selected_action[:160].rstrip("。") }”做一个最小准备动作，做到这里就停。'
 
 
 def build_action_card(scenario, excluded_step=''):

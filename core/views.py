@@ -17,6 +17,7 @@ from django.views.decorators.http import require_GET, require_POST
 from .ai_client import AIUnavailable, generate_ai_reply, stream_ai_reply
 from .models import OutcomeRecord
 from .actions import action_was_presented, new_action_card, resolve_scenario
+from .action_recovery import prepare_action_recovery
 from .conversation import END_REQUEST, bounded_context, choose_phase, current_preference, exploration_answers, is_explicit_correction, is_short_confirmation, parse_memory, remember, resolve_action_status, take_sentences
 from .medical import medical_boundary_reply
 
@@ -205,11 +206,16 @@ def chat(request):
 
     phase = choose_phase(message, action_status, memory, history)
     scenario = resolve_scenario(scenario, message, history, selected_action)
+    recovery = prepare_action_recovery(message, scenario, phase, selected_action, action_status, memory)
+    if recovery:
+        phase, selected_action, action_status, memory = (
+            recovery['phase'], recovery['selected_action'], recovery['action_status'], recovery['memory'],
+        )
 
     if wants_stream:
         return stream_model_response(
             message, scenario, history, phase, selected_action, action_status, memory,
-            lock_key=lock_key,
+            lock_key=lock_key, recovery=recovery,
         )
 
     try:
@@ -236,9 +242,10 @@ def chat(request):
     return JsonResponse({
         'reply': reply,
         'provider': provider,
-        'stage': phase,
+        'stage': 'action' if recovery else phase,
         'action_status': action_status,
         'action_card': action_card,
+        'action_revision': recovery['revision'] if recovery else None,
         'memory': remember(memory, message, history, reply, action_card=action_card),
     })
 
@@ -367,7 +374,7 @@ class ReplyGuard:
                 continue
             is_question = bool(re.search(r'[？?]|(?:吗|对吧|是吧|对不对|是不是)[。！!]?$', sentence))
             if self.phase == 'listen' and (
-                is_question or re.search(r'行动卡|任务清单|建议你|试着|试试|先.{0,8}(做|写|列|完成)|下一步', sentence)
+                is_question or re.search(r'行动卡|任务清单|建议你|试着|试试|先.{0,8}(做|写|列|完成)|下一步|你可以.{0,12}(写|读|看|做|列|复习|检查)|[123一二三][.、：:]', sentence)
             ):
                 continue
             if self.phase != 'control' and '行动卡' in sentence:
@@ -405,7 +412,7 @@ class ReplyGuard:
         return emitted
 
 
-def stream_model_response(message, scenario, history, phase, selected_action, action_status, memory, lock_key=''):
+def stream_model_response(message, scenario, history, phase, selected_action, action_status, memory, lock_key='', recovery=None):
     action_card = new_action_card(scenario, selected_action, phase, history, memory)
     status_labels = {
         'listen': '正在认真听你说',
@@ -416,7 +423,7 @@ def stream_model_response(message, scenario, history, phase, selected_action, ac
 
     def events():
         yield stream_event(
-            'meta', stage=phase, action_status=action_status, action_card=action_card,
+            'meta', stage='action' if recovery else phase, action_status=action_status, action_card=action_card,
         )
         yield stream_event('status', text=status_labels.get(phase, '正在认真整理回应'))
         guard = ReplyGuard(message, history, phase, selected_action, action_status, memory, action_card)
@@ -450,15 +457,19 @@ def stream_model_response(message, scenario, history, phase, selected_action, ac
         for sentence in guard.feed('', final=True):
             yield stream_event('delta', text=sentence, provider=provider)
         reply = guard.reply
+        committed = recovery['before'] if interrupted and recovery else {
+            'phase': 'action' if recovery else phase, 'action_status': action_status, 'memory': memory,
+        }
         yield stream_event(
             'done',
             reply=reply,
             provider=provider,
-            stage=phase,
-            action_status=action_status,
+            stage=committed['phase'],
+            action_status=committed['action_status'],
             action_card=None if interrupted else action_card,
+            action_revision=recovery['revision'] if recovery and not interrupted else None,
             interrupted=interrupted,
-            memory=remember(memory, message, history, reply, action_card=None if interrupted else action_card),
+            memory=remember(committed['memory'], message, history, reply, action_card=None if interrupted else action_card),
         )
 
     def guarded_events():
@@ -835,6 +846,11 @@ def build_supportive_reply(message, scenario, phase='clarify', selected_action='
             '你不需要急着处理好所有感受，可以按自己的节奏说。'
         )
     if phase == 'listen':
+        if selected_action and action_status in ('stuck', 'adjusting'):
+            return (
+                '这一步现在做不下去，确实会让人挫败。你已经告诉我哪里需要照顾，做不完也不代表你不够好。'
+                '这一轮先不催你继续，我们可以停一停。我会陪你把这一步变得更轻。'
+            )
         return (
             '你愿意把这些感受告诉我，我会认真听。此刻不用整理好语言，也不必急着解决问题。'
             '难受的时候可以先停一停，想说多少、说到哪里，都按你的节奏来。'

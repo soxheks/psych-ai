@@ -205,6 +205,17 @@ def build_user_prompt(message, scenario, history=None, phase='clarify', selected
     if proposed and action_was_presented(proposed['step'], history, memory):
         action_context += '这个候选动作已在前文展示，本轮不再发卡或重复原文；回答用户对它的疑问，给出更具体的解释。\n'
     turn_guidance = ''
+    recovery = memory.get('action_recovery', {})
+    if recovery.get('step') == selected_action:
+        if recovery.get('state') == 'comforted' and phase == 'listen':
+            status_guidance = '本轮只接住尝试受阻的挫败感，温和安慰，不追问、不催行动、不提前布置简化步骤。'
+        elif recovery.get('state') == 'offered' and phase == 'action' and action_status == 'selected':
+            turn_guidance += (
+                '前面已安慰过一轮，现在主动承接到原行动的简化版本。'
+                '本轮提供的用户已选择行动就是简化后的当前步骤，不是旧版的完整任务。'
+                '解释怎样轻轻开始、做到哪里就可以停，不再问愿不愿意或要求主动索要办法，'
+                '不声称已开始或完成，不另加任务；用户明确暂停时尊重暂停。\n'
+            )
     if phase == 'clarify':
         answered_count = len(exploration_answers(message, history, memory))
         turn_guidance += (
