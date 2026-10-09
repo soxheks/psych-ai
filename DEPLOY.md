@@ -9,7 +9,7 @@ Local addresses such as `http://127.0.0.1:8001/` only work on this computer. A p
 - Formal deployment to a cloud platform such as Render or Railway.
 - Temporary public tunnel from this computer for short demos.
 
-## Recommended: Render
+## Recommended: Render with Neon Postgres
 
 This project already includes Render-ready files:
 
@@ -21,21 +21,33 @@ Steps:
 
 1. Create a GitHub repository and upload this project.
 2. Open Render and create a new Blueprint from the repository.
-3. Set environment variables:
+3. Create a Neon project on the Free plan, preferably in the same region as the
+   Render web service. The current web service is in Oregon, so use AWS US West
+   (Oregon) when available. Copy the PostgreSQL connection string with SSL enabled.
+4. Set environment variables in the Render dashboard:
 
 ```text
 AI_PROVIDER=doubao
 ARK_API_KEY=your-new-volcengine-ark-api-key
 ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 DOUBAO_MODEL=ep-20260908200558-l7blb
+DATABASE_URL=your-neon-postgresql-connection-string-with-ssl
 ```
 
-4. Deploy.
-5. Render will provide a public URL such as:
+5. Deploy. `build.sh` collects static assets and applies Django migrations.
+6. Render will provide a public URL such as:
 
 ```text
 https://psych-ai.onrender.com
 ```
+
+`render.yaml` no longer creates a free Render database. `DATABASE_URL` is a
+dashboard-managed secret, so future Blueprint syncs do not replace a Neon URL
+with the old Render database URL. Updating an existing Blueprint does not prompt
+for this value; set it manually before deploying.
+
+For the existing site's data migration, recovery decision, and verification,
+follow [the Neon migration guide](docs/NEON_MIGRATION.md).
 
 ## Important Security Notes
 
